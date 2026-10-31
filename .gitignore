@@ -16,3 +16,7 @@ node_modules/
 
 # Build files
 dist/
+# Local SQLite database files
+*.db
+*.db-shm
+*.db-wal
