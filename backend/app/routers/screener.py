@@ -20,6 +20,7 @@ from app.database import (
     save_screener,
 )
 from app.schemas.screener import (
+    DefaultPresetStrategy,
     SaveScreenerRequest,
     SavedScreenerResponse,
     ScreenRequest,
@@ -29,6 +30,73 @@ from app.schemas.screener import (
 from app.services.screener_service import run_screen
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
+
+
+DEFAULT_PRESETS: list[DefaultPresetStrategy] = [
+    DefaultPresetStrategy(
+        id="high-growth",
+        name="High Growth Companies",
+        description="High compounding companies with >15% Revenue & >18% Profit growth and healthy ROE.",
+        rationale="Filters for fast-growing businesses capable of reinvesting capital at attractive return rates.",
+        filters=ScreenRequest(min_revenue_growth=15.0, min_profit_growth=18.0, min_roe=15.0, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="high-roce",
+        name="High ROCE Companies",
+        description="Capital-efficient businesses with ROCE >= 22%, low debt, and solid operating margins.",
+        rationale="Buffett-style franchises generating superior returns on total capital employed.",
+        filters=ScreenRequest(min_roce=22.0, max_debt_equity=0.5, min_opm=15.0, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="low-debt",
+        name="Low Debt Companies",
+        description="Fortress balance sheet companies with Debt/Equity <= 0.1 and interest coverage.",
+        rationale="Financially resilient companies with virtually no solvency or bankruptcy risk.",
+        filters=ScreenRequest(max_debt_equity=0.1, min_roce=15.0, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="consistent-profit",
+        name="Consistent Profit Growers",
+        description="Steady compounding stalwarts with double-digit profit growth and consistent ROE.",
+        rationale="Predictable, wide-moat compounders for conservative long-term capital appreciation.",
+        filters=ScreenRequest(min_profit_growth=12.0, min_roe=18.0, max_debt_equity=0.8, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="cash-flow-strong",
+        name="Cash Flow Strong Companies",
+        description="Companies with robust cash generation and positive Free Cash Flow.",
+        rationale="Real cash generation safeguards against aggressive or misleading accrual accounting.",
+        filters=ScreenRequest(min_opm=15.0, min_roce=15.0, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="undervalued-quality",
+        name="Undervalued Quality Companies",
+        description="High quality companies (ROCE >= 18%, D/E <= 0.5) trading at reasonable PE multiples (<= 30).",
+        rationale="Quality at a Reasonable Price (GARP) — never buying low PE without verifying high ROCE.",
+        filters=ScreenRequest(min_roce=18.0, max_debt_equity=0.5, max_pe=30.0, min_roe=15.0, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="promoter-skin",
+        name="Promoter Skin-in-the-Game",
+        description="High promoter ownership (>= 50%) with zero pledging and strong institutional backing.",
+        rationale="Management interests fully aligned with minority shareholders with no pledge overhang.",
+        filters=ScreenRequest(min_promoter_holding=50.0, max_promoter_pledging=0.0, min_fii_holding=10.0, page_size=50),
+    ),
+    DefaultPresetStrategy(
+        id="turnaround",
+        name="Turnaround Candidates",
+        description="Companies exhibiting strong quarterly profit inflection (>20% YoY) and manageable debt.",
+        rationale="Catching operational or earnings inflection before broad market recognition.",
+        filters=ScreenRequest(min_profit_growth=20.0, max_debt_equity=1.0, page_size=50),
+    ),
+]
+
+
+@router.get("/presets/default", response_model=list[DefaultPresetStrategy])
+def get_default_presets():
+    """Return the 8 built-in institutional preset screening strategies."""
+    return DEFAULT_PRESETS
+
 
 
 @router.post("/run", response_model=ScreenResponse)
@@ -143,18 +211,25 @@ def _get_filter_field_definitions():
             {"field": "close", "label": "Current Price (₹)", "type": "range"},
             {"field": "pe", "label": "P/E Ratio", "type": "range"},
             {"field": "pb", "label": "P/B Ratio", "type": "range"},
+            {"field": "peg", "label": "PEG Ratio", "type": "range"},
             {"field": "roe", "label": "ROE (%)", "type": "range"},
             {"field": "roce", "label": "ROCE (%)", "type": "range"},
             {"field": "debt_equity", "label": "Debt/Equity", "type": "range"},
+            {"field": "interest_coverage", "label": "Interest Coverage (x)", "type": "range"},
             {"field": "revenue_growth_pct", "label": "Revenue Growth (%)", "type": "range"},
             {"field": "profit_growth_pct", "label": "Profit Growth (%)", "type": "range"},
+            {"field": "revenue_cagr_3y", "label": "3Y Revenue CAGR (%)", "type": "range"},
+            {"field": "pat_cagr_3y", "label": "3Y PAT CAGR (%)", "type": "range"},
             {"field": "opm_pct", "label": "Operating Profit Margin (%)", "type": "range"},
+            {"field": "cfo_pat_ratio", "label": "CFO / PAT (Cash Quality)", "type": "range"},
             {"field": "free_cash_flow_cr", "label": "Free Cash Flow (₹ Cr)", "type": "range"},
+            {"field": "quality_score", "label": "Quality Score (0-100)", "type": "range"},
             {"field": "promoter_holding", "label": "Promoter Holding (%)", "type": "range"},
             {"field": "promoter_pledging", "label": "Promoter Pledging (%)", "type": "range"},
             {"field": "fii_holding", "label": "FII Holding (%)", "type": "range"},
             {"field": "dii_holding", "label": "DII Holding (%)", "type": "range"},
         ],
+
         "technical": [
             {"field": "rsi", "label": "RSI (14)", "type": "range"},
             {"field": "macd", "label": "MACD", "type": "range"},

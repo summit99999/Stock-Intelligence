@@ -62,6 +62,15 @@ export interface ScreenRequest {
   min_return_1y?: number;
   max_return_1y?: number;
 
+  // New Fundamental Engine Filters
+  min_revenue_cagr_3y?: number;
+  min_pat_cagr_3y?: number;
+  min_interest_coverage?: number;
+  min_cfo_pat_ratio?: number;
+  max_peg?: number;
+  min_quality_score?: number;
+  min_free_cash_flow_cr?: number;
+
   // Advanced
   condition_groups?: ConditionGroup[];
 
@@ -99,6 +108,13 @@ export interface StockResult {
   fii_holding?: number;
   dii_holding?: number;
   volume?: number;
+  revenue_cagr_3y?: number;
+  pat_cagr_3y?: number;
+  interest_coverage?: number;
+  cfo_pat_ratio?: number;
+  peg?: number;
+  quality_score?: number;
+  free_cash_flow_cr?: number;
 }
 
 export interface ScreenResponse {

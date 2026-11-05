@@ -1,9 +1,35 @@
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./style.css";
 import StockScreener from "./components/StockScreener";
+import CompanyResearch from "./components/CompanyResearch";
+import MarketOverview from "./components/MarketOverview";
+import TechnicalAnalysisView from "./components/TechnicalAnalysisView";
+import VolumeAnalyticsView from "./components/VolumeAnalyticsView";
+import FootprintOrderFlowView from "./components/FootprintOrderFlowView";
+import AIMentorView from "./components/AIMentorView";
+import TradePlannerView from "./components/TradePlannerView";
+import WatchlistView from "./components/WatchlistView";
+import AlertsView from "./components/AlertsView";
+import SettingsView from "./components/SettingsView";
+import MarketXRayView from "./components/MarketXRayView";
+import OrderBlockBoardView from "./components/OrderBlockBoardView";
+import SmartMoneyConceptsView from "./components/SmartMoneyConceptsView";
+import SMCBacktestView from "./components/SMCBacktestView";
+import MarketScannerView from "./components/MarketScannerView";
+import SetupBoardView from "./components/SetupBoardView";
+import MoneyFlowIntelligenceView from "./components/MoneyFlowIntelligenceView";
+import UnifiedResearchDashboardView from "./components/UnifiedResearchDashboardView";
+import {
+  fetchLiveFeedStatus,
+  fetchLiveQuotes,
+  refreshLiveQuotes,
+  reconnectLiveFeed,
+  subscribeMarketFeed,
+  LiveFeedStatus,
+  LiveQuote,
+} from "./api/marketFeed";
 
-const indices = [
+const defaultIndices = [
   { name: "NIFTY 50", value: "24,850.50", change: "+0.72%", positive: true, points: "0,36 15,31 30,34 45,20 60,25 75,13 90,17 105,5" },
   { name: "BANK NIFTY", value: "56,240.20", change: "+0.45%", positive: true, points: "0,32 15,25 30,29 45,16 60,22 75,10 90,15 105,8" },
   { name: "SENSEX", value: "81,450.30", change: "-0.18%", positive: false, points: "0,8 15,13 30,9 45,23 60,17 75,30 90,25 105,37" },
@@ -21,7 +47,7 @@ const sectors = [
   { name: "ENERGY", change: -1.14 },
 ];
 
-const movers = [
+const defaultMovers = [
   { symbol: "TRENT", name: "Trent Limited", price: "6,245.00", change: 4.82, volume: "12.5L" },
   { symbol: "BEL", name: "Bharat Electronics", price: "312.40", change: 3.65, volume: "84.2L" },
   { symbol: "HAL", name: "Hindustan Aeronautics", price: "4,120.00", change: 2.91, volume: "18.4L" },
@@ -29,7 +55,7 @@ const movers = [
   { symbol: "ONGC", name: "Oil & Natural Gas Corp.", price: "268.10", change: -1.82, volume: "32.8L" },
 ];
 
-const watchlist = [
+const defaultWatchlist = [
   { symbol: "RELIANCE", name: "Reliance Industries", price: "1,420.50", change: 1.25 },
   { symbol: "TCS", name: "Tata Consultancy Services", price: "3,450.00", change: -0.65 },
   { symbol: "INFY", name: "Infosys Limited", price: "1,520.80", change: 1.82 },
@@ -37,13 +63,55 @@ const watchlist = [
   { symbol: "SUNPHARMA", name: "Sun Pharmaceutical", price: "1,735.00", change: -0.35 },
 ];
 
-const navigation = [
-  { name: "Dashboard", icon: "▦" },
-  { name: "Stock Screener", icon: "⌕" },
-  { name: "Market Overview", icon: "◫" },
-  { name: "Charts & Analysis", icon: "⌁" },
-  { name: "My Watchlist", icon: "☆" },
-  { name: "Backtesting", icon: "◷" },
+interface NavItemDef {
+  name: string;
+  icon: string;
+  section: string;
+  tag?: string;
+}
+
+const navSections: { section: string; items: NavItemDef[] }[] = [
+  {
+    section: "MARKET SCANNER & RADAR",
+    items: [
+      { name: "Dashboard", icon: "▦", section: "MARKET SCANNER & RADAR" },
+      { name: "Unified Research", icon: "🔬", section: "MARKET SCANNER & RADAR", tag: "ENGINE" },
+      { name: "Market Overview", icon: "◫", section: "MARKET SCANNER & RADAR" },
+      { name: "Money Flow Intelligence", icon: "🌊", section: "MARKET SCANNER & RADAR", tag: "FLOW" },
+      { name: "Market Scanner", icon: "🔍", section: "MARKET SCANNER & RADAR", tag: "VL" },
+      { name: "Bullish Setups", icon: "▲", section: "MARKET SCANNER & RADAR", tag: "BULL" },
+      { name: "Bearish Setups", icon: "▼", section: "MARKET SCANNER & RADAR", tag: "BEAR" },
+      { name: "Consolidation", icon: "▤", section: "MARKET SCANNER & RADAR" },
+    ],
+  },
+  {
+    section: "CHARTS & ANALYSIS",
+    items: [
+      { name: "Technical Charts", icon: "⌁", section: "CHARTS & ANALYSIS", tag: "PRO" },
+      { name: "Order Blocks", icon: "🧱", section: "CHARTS & ANALYSIS", tag: "SMC" },
+      { name: "Volume Analytics", icon: "📊", section: "CHARTS & ANALYSIS" },
+      { name: "Market X-Ray", icon: "🌐", section: "CHARTS & ANALYSIS", tag: "PRO" },
+      { name: "Smart Money Concepts", icon: "🏛", section: "CHARTS & ANALYSIS", tag: "SMC" },
+      { name: "Fundamental Research", icon: "🏢", section: "CHARTS & ANALYSIS" },
+      { name: "Footprint & Order Flow", icon: "⚡", section: "CHARTS & ANALYSIS" },
+    ],
+  },
+  {
+    section: "EXECUTION & QUANT",
+    items: [
+      { name: "Backtesting", icon: "⏱", section: "EXECUTION & QUANT", tag: "QUANT" },
+      { name: "Trade Planner", icon: "📐", section: "EXECUTION & QUANT" },
+      { name: "Watchlist", icon: "☆", section: "EXECUTION & QUANT" },
+      { name: "Alerts", icon: "🔔", section: "EXECUTION & QUANT" },
+      { name: "AI Mentor", icon: "🤖", section: "EXECUTION & QUANT", tag: "AI" },
+    ],
+  },
+  {
+    section: "SYSTEM",
+    items: [
+      { name: "Settings", icon: "⚙", section: "SYSTEM" },
+    ],
+  },
 ];
 
 function Sparkline({ points, positive }: { points: string; positive: boolean }) {
@@ -63,18 +131,146 @@ function Sparkline({ points, positive }: { points: string; positive: boolean }) 
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
+  const [currentSymbol, setCurrentSymbol] = useState("RELIANCE");
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("1D");
 
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
+  const [feedStatus, setFeedStatus] = useState<LiveFeedStatus | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    // Initial fetch of feed status and quotes
+    fetchLiveFeedStatus().then(setFeedStatus).catch(() => {});
+    fetchLiveQuotes()
+      .then((res) => {
+        if (res.quotes) setLiveQuotes(res.quotes);
+      })
+      .catch(() => {});
+
+    // Subscribe to live WebSocket feed
+    const unsubscribe = subscribeMarketFeed({
+      onTick: (quote) => {
+        setLiveQuotes((prev) => ({ ...prev, [quote.symbol]: quote }));
+      },
+      onSnapshot: (quotes, status) => {
+        setLiveQuotes((prev) => ({ ...prev, ...quotes }));
+        if (status) setFeedStatus(status);
+      },
+      onStatusChange: (status) => {
+        setFeedStatus(status);
+      },
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await refreshLiveQuotes();
+      if (res.quotes) {
+        setLiveQuotes((prev) => ({ ...prev, ...res.quotes }));
+      }
+      const st = await fetchLiveFeedStatus();
+      setFeedStatus(st);
+    } catch (e) {
+      console.error("Refresh failed:", e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const isLiveConnected = feedStatus?.status === "CONNECTED";
+  const isRateLimited = feedStatus?.status === "RATE_LIMITED";
+  const isDisabled = feedStatus?.status === "DISABLED";
+  const hasLiveQuotes = Object.values(liveQuotes).some((q) => q.source === "LIVE");
+
+  const displayIndices = useMemo(() => {
+    return defaultIndices.map((base) => {
+      const q = liveQuotes[base.name] || liveQuotes[base.name.replace(" 50", "")];
+      if (q) {
+        const positive = (q.change ?? 0) >= 0;
+        const formattedVal = q.ltp.toLocaleString("en-IN", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        const changeStr = `${positive ? "+" : ""}${(q.change_percent ?? 0).toFixed(2)}%`;
+        return {
+          ...base,
+          value: formattedVal,
+          change: changeStr,
+          positive,
+          source: q.source,
+        };
+      }
+      return { ...base, source: "DEMO" };
+    });
+  }, [liveQuotes]);
+
+  const displayWatchlist = useMemo(() => {
+    return defaultWatchlist.map((item) => {
+      const q = liveQuotes[item.symbol];
+      if (q) {
+        return {
+          ...item,
+          price: q.ltp.toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+          change: q.change_percent ?? item.change,
+          source: q.source,
+        };
+      }
+      return { ...item, source: "DEMO" };
+    });
+  }, [liveQuotes]);
+
   const filteredWatchlist = useMemo(
     () =>
-      watchlist.filter(
+      displayWatchlist.filter(
         (stock) =>
           stock.symbol.toLowerCase().includes(search.toLowerCase()) ||
           stock.name.toLowerCase().includes(search.toLowerCase())
       ),
-    [search]
+    [displayWatchlist, search]
   );
+
+  const displayMovers = useMemo(() => {
+    return defaultMovers.map((item) => {
+      const q = liveQuotes[item.symbol];
+      if (q) {
+        return {
+          ...item,
+          price: q.ltp.toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+          change: q.change_percent ?? item.change,
+          volume: q.volume ? `${(q.volume / 100000).toFixed(1)}L` : item.volume,
+          source: q.source,
+        };
+      }
+      return { ...item, source: "DEMO" };
+    });
+  }, [liveQuotes]);
+
+  const handleOpenChart = (sym: string) => {
+    setCurrentSymbol(sym);
+    setActivePage("Technical Analysis");
+  };
+
+  const handleOpenResearch = (sym: string) => {
+    setCurrentSymbol(sym);
+    setActivePage("Fundamental Research");
+  };
+
+  const handleOpenPlanner = (sym: string) => {
+    setCurrentSymbol(sym);
+    setActivePage("Trade Planner");
+  };
 
   return (
     <div className="app-shell">
@@ -83,34 +279,64 @@ function App() {
           <div className="brand-icon">S</div>
           <div>
             <h2>Stock Intelligence</h2>
-            <span>MARKET TERMINAL</span>
+            <span>PRO TERMINAL</span>
           </div>
         </div>
 
-        <div className="nav-label">WORKSPACE</div>
         <nav>
-          {navigation.map((item) => (
-            <button
-              key={item.name}
-              className={`nav-item ${activePage === item.name ? "active" : ""}`}
-              onClick={() => setActivePage(item.name)}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.name}
-              {item.name === "Stock Screener" && <span className="nav-tag">NEW</span>}
-            </button>
+          {navSections.map((sec) => (
+            <div key={sec.section} style={{ display: "grid", gap: "2px", marginBottom: "6px" }}>
+              <div className="nav-label">{sec.section}</div>
+              {sec.items.map((item) => (
+                <button
+                  key={item.name}
+                  className={`nav-item ${activePage === item.name ? "active" : ""}`}
+                  onClick={() => setActivePage(item.name)}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  {item.name}
+                  {item.tag && <span className="nav-tag">{item.tag}</span>}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
         <div className="sidebar-bottom">
           <div className="data-status">
-            <span className="status-dot" />
+            <span
+              className={`status-dot ${
+                isLiveConnected
+                  ? "live"
+                  : isRateLimited
+                  ? "rate-limited"
+                  : isDisabled
+                  ? "disabled"
+                  : "demo"
+              }`}
+            />
             <div>
-              <strong>Demo environment</strong>
-              <small>Sample data · Not live</small>
+              <strong>
+                {isLiveConnected
+                  ? "DhanHQ Live Feed"
+                  : isRateLimited
+                  ? "Rate Limited (HTTP 429)"
+                  : isDisabled
+                  ? "Live Feed Disabled"
+                  : "yfinance / Demo Mode"}
+              </strong>
+              <small>
+                {isLiveConnected
+                  ? "Active WebSocket · Live streaming"
+                  : isRateLimited
+                  ? "Data API inactive / Cooldown"
+                  : isDisabled
+                  ? "DHAN_LIVE_DATA_ENABLED=false"
+                  : "Historical & offline fallback"}
+              </small>
             </div>
           </div>
-          <div className="sidebar-footer">STOCK INTELLIGENCE v1.0</div>
+          <div className="sidebar-footer">STOCK INTELLIGENCE PRO v2.0</div>
         </div>
       </aside>
 
@@ -121,12 +347,71 @@ function App() {
             <h1>{activePage}</h1>
           </div>
           <div className="topbar-right">
-            <span className="market-status"><span className="status-dot" /> DEMO MODE</span>
+            {(isRateLimited || isDisabled) && (
+              <button
+                className="refresh-action-btn"
+                onClick={async () => {
+                  setIsRefreshing(true);
+                  try {
+                    const st = await reconnectLiveFeed(true);
+                    setFeedStatus(st);
+                  } catch (e) {
+                    console.error("Manual reconnect failed:", e);
+                  } finally {
+                    setIsRefreshing(false);
+                  }
+                }}
+                disabled={isRefreshing}
+                title="Manually retry Dhan WebSocket connection"
+                style={{ borderColor: isRateLimited ? "#ef6676" : "#4a5568", color: isRateLimited ? "#ef6676" : "#a0aec0" }}
+              >
+                {isRefreshing ? "Connecting..." : "⚡ Reconnect Feed"}
+              </button>
+            )}
+            <button
+              className="refresh-action-btn"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="Trigger immediate snapshot refresh from API"
+            >
+              {isRefreshing ? "↻ Refreshing..." : "↻ Refresh Feed"}
+            </button>
+            <span
+              className={`market-status ${
+                isLiveConnected
+                  ? "live"
+                  : isRateLimited
+                  ? "rate-limited"
+                  : isDisabled
+                  ? "disabled"
+                  : "demo"
+              }`}
+            >
+              <span
+                className={`status-dot ${
+                  isLiveConnected
+                    ? "live"
+                    : isRateLimited
+                    ? "rate-limited"
+                    : isDisabled
+                    ? "disabled"
+                    : "demo"
+                }`}
+              />
+              {isLiveConnected
+                ? "LIVE FEED (DHAN)"
+                : isRateLimited
+                ? "RATE LIMITED"
+                : isDisabled
+                ? "FEED DISABLED"
+                : "DEMO MODE"}
+            </span>
             <div className="profile-avatar">SI</div>
           </div>
         </header>
 
-        {activePage === "Dashboard" ? (
+        {/* 1. Dashboard View */}
+        {activePage === "Dashboard" && (
           <>
             <section className="welcome-row">
               <div>
@@ -146,17 +431,21 @@ function App() {
               </div>
             </section>
 
-            <div className="notice">
+            <div className={`notice ${isLiveConnected || hasLiveQuotes ? "live-notice" : ""}`}>
               <span>ⓘ</span>
-              DEMONSTRATION DATA — Figures are illustrative and are not current exchange prices.
+              {isLiveConnected || hasLiveQuotes
+                ? "LIVE MARKET FEED — Prices and index quotes streamed from DhanHQ API."
+                : "DEMONSTRATION & HISTORICAL DATA — Figures are illustrative and are not current exchange prices."}
             </div>
 
             <section className="index-grid">
-              {indices.map((index) => (
+              {displayIndices.map((index) => (
                 <article className="index-card" key={index.name}>
                   <div className="card-top">
                     <span>{index.name}</span>
-                    <span className="card-menu">···</span>
+                    <span className={index.source === "LIVE" ? "badge-live" : "badge-demo"}>
+                      {index.source}
+                    </span>
                   </div>
                   <div className="index-value">{index.value}</div>
                   <div className="index-bottom">
@@ -174,7 +463,7 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h3>Market breadth</h3>
-                    <p>Illustrative advance / decline distribution</p>
+                    <p>Advance / decline distribution</p>
                   </div>
                   <span className="panel-menu">···</span>
                 </div>
@@ -197,7 +486,7 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h3>Sector performance</h3>
-                    <p>Illustrative percentage change</p>
+                    <p>Daily sector rotation index</p>
                   </div>
                   <span className="panel-menu">···</span>
                 </div>
@@ -225,24 +514,42 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h3>Market movers</h3>
-                    <p>Selected stocks · Illustrative prices</p>
+                    <p>Selected stocks · Real-time and illustrative prices</p>
                   </div>
-                  <span className="table-label">SAMPLE</span>
+                  <span className={hasLiveQuotes ? "badge-live" : "table-label"}>
+                    {hasLiveQuotes ? "LIVE STREAM" : "SAMPLE"}
+                  </span>
                 </div>
                 <div className="table-wrap">
                   <table>
                     <thead>
-                      <tr><th>STOCK</th><th>PRICE (₹)</th><th>CHANGE</th><th>VOLUME</th></tr>
+                      <tr>
+                        <th>STOCK</th>
+                        <th>PRICE (₹)</th>
+                        <th>CHANGE</th>
+                        <th>VOLUME</th>
+                        <th>STATUS</th>
+                      </tr>
                     </thead>
                     <tbody>
-                      {movers.map((stock) => (
-                        <tr key={stock.symbol}>
+                      {displayMovers.map((stock) => (
+                        <tr
+                          key={stock.symbol}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => handleOpenChart(stock.symbol)}
+                          title="Click to view full Technical Chart"
+                        >
                           <td><strong>{stock.symbol}</strong><small>{stock.name}</small></td>
                           <td>{stock.price}</td>
                           <td className={stock.change >= 0 ? "positive" : "negative"}>
                             {stock.change > 0 ? "+" : ""}{stock.change.toFixed(2)}%
                           </td>
                           <td>{stock.volume}</td>
+                          <td>
+                            <span className={stock.source === "LIVE" ? "badge-live" : "badge-demo"}>
+                              {stock.source}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -253,21 +560,35 @@ function App() {
               <article className="panel watchlist-panel">
                 <div className="panel-heading">
                   <div>
-                    <h3>My watchlist</h3>
-                    <p>Stocks to keep an eye on</p>
+                    <h3>Quick Watchlist</h3>
+                    <p>Featured stocks to monitor</p>
                   </div>
                   <span className="watch-count">{filteredWatchlist.length} STOCKS</span>
                 </div>
                 <input
                   className="watch-search"
-                  placeholder="Search your watchlist..."
+                  placeholder="Search quick watchlist..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 <div className="watch-items">
                   {filteredWatchlist.map((stock) => (
-                    <div className="watch-item" key={stock.symbol}>
-                      <div><strong>{stock.symbol}</strong><small>{stock.name}</small></div>
+                    <div
+                      className="watch-item"
+                      key={stock.symbol}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => handleOpenChart(stock.symbol)}
+                      title="Click to view full Technical Chart"
+                    >
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <strong>{stock.symbol}</strong>
+                          <span className={stock.source === "LIVE" ? "badge-live" : "badge-demo"}>
+                            {stock.source}
+                          </span>
+                        </div>
+                        <small>{stock.name}</small>
+                      </div>
                       <div className="watch-price">
                         <strong>₹{stock.price}</strong>
                         <small className={stock.change >= 0 ? "positive" : "negative"}>
@@ -284,19 +605,209 @@ function App() {
             </section>
 
             <footer className="page-footer">
-              <span>STOCK INTELLIGENCE</span>
-              <span>Illustrative dashboard · No live market connection</span>
+              <span>STOCK INTELLIGENCE PRO</span>
+              <span>
+                {isLiveConnected
+                  ? "Connected to Dhan Live Market Feed (v2)"
+                  : "yfinance historical engine · Zero-cost research mode"}
+              </span>
             </footer>
           </>
-        ) : activePage === "Stock Screener" ? (
-          <StockScreener />
-        ) : (
-          <section className="coming-soon">
-            <div className="coming-icon">⌁</div>
-            <h2>{activePage}</h2>
-            <p>This module is planned for the next development phase.</p>
-            <button onClick={() => setActivePage("Dashboard")}>Back to Dashboard</button>
-          </section>
+        )}
+
+        {/* Unified Research & Decision Engine (Phase 12) */}
+        {activePage === "Unified Research" && (
+          <UnifiedResearchDashboardView
+            onSelectStock={(sym) => {
+              setCurrentSymbol(sym);
+            }}
+          />
+        )}
+
+        {/* 2. Market Overview */}
+        {activePage === "Market Overview" && (
+          <MarketOverview
+            onSelectStock={(sym, pg) => {
+              setCurrentSymbol(sym);
+              if (pg === "Company Research") {
+                setActivePage("Fundamental Research");
+              } else {
+                setActivePage("Technical Analysis");
+              }
+            }}
+            liveQuotes={liveQuotes}
+          />
+        )}
+
+        {/* 2b. Money Flow & Daily Volume Intelligence */}
+        {activePage === "Money Flow Intelligence" && (
+          <MoneyFlowIntelligenceView
+            onSelectStock={(sym) => {
+              setCurrentSymbol(sym);
+              setActivePage("Technical Charts");
+            }}
+            liveQuotes={liveQuotes}
+            initialSymbol={currentSymbol}
+          />
+        )}
+
+        {/* 3. Market Scanner (VolumeLens-Inspired) */}
+        {activePage === "Market Scanner" && (
+          <MarketScannerView
+            onSelectStock={(sym) => {
+              setCurrentSymbol(sym);
+              setActivePage("Technical Charts");
+            }}
+          />
+        )}
+
+        {/* 3b. Legacy Screener */}
+        {activePage === "Stock Scanner" && (
+          <StockScreener
+            onOpenResearch={handleOpenResearch}
+          />
+        )}
+
+        {/* 3c. Bullish Setups */}
+        {activePage === "Bullish Setups" && (
+          <SetupBoardView
+            initialDirection="BULLISH"
+            onSelectStock={(sym) => {
+              setCurrentSymbol(sym);
+              setActivePage("Technical Charts");
+            }}
+          />
+        )}
+
+        {/* 3d. Bearish Setups */}
+        {activePage === "Bearish Setups" && (
+          <SetupBoardView
+            initialDirection="BEARISH"
+            onSelectStock={(sym) => {
+              setCurrentSymbol(sym);
+              setActivePage("Technical Charts");
+            }}
+          />
+        )}
+
+        {/* 3e. Consolidation */}
+        {activePage === "Consolidation" && (
+          <SetupBoardView
+            initialDirection="CONSOLIDATION"
+            onSelectStock={(sym) => {
+              setCurrentSymbol(sym);
+              setActivePage("Technical Charts");
+            }}
+          />
+        )}
+
+        {/* 4. Technical Analysis / Technical Charts */}
+        {(activePage === "Technical Analysis" || activePage === "Technical Charts") && (
+          <TechnicalAnalysisView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            onNavigateToResearch={handleOpenResearch}
+            onNavigateToPlanner={handleOpenPlanner}
+          />
+        )}
+
+        {/* 5. Volume Analytics */}
+        {activePage === "Volume Analytics" && (
+          <VolumeAnalyticsView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+          />
+        )}
+
+        {/* 6. Footprint & Order Flow */}
+        {activePage === "Footprint & Order Flow" && (
+          <FootprintOrderFlowView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+          />
+        )}
+
+        {/* 7. Fundamental Research */}
+        {activePage === "Fundamental Research" && (
+          <CompanyResearch
+            initialSymbol={currentSymbol}
+            onSelectStock={setCurrentSymbol}
+          />
+        )}
+
+        {/* 8. AI Mentor */}
+        {activePage === "AI Mentor" && (
+          <AIMentorView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+          />
+        )}
+
+        {/* 9. Trade Planner */}
+        {activePage === "Trade Planner" && (
+          <TradePlannerView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+          />
+        )}
+
+        {/* 10. Watchlist */}
+        {activePage === "Watchlist" && (
+          <WatchlistView
+            onSelectSymbol={setCurrentSymbol}
+            onNavigate={setActivePage}
+            liveQuotes={liveQuotes}
+          />
+        )}
+
+        {/* 11. Alerts */}
+        {activePage === "Alerts" && (
+          <AlertsView
+            onSelectSymbol={setCurrentSymbol}
+            onNavigate={setActivePage}
+            liveQuotes={liveQuotes}
+          />
+        )}
+
+        {/* 12. Settings */}
+        {activePage === "Settings" && (
+          <SettingsView
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {/* 13. Market X-Ray */}
+        {activePage === "Market X-Ray" && (
+          <MarketXRayView
+            onSelectSymbol={(sym) => setCurrentSymbol(sym)}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {/* 14. Order Block Board */}
+        {(activePage === "Order Block Board" || activePage === "Order Blocks") && (
+          <OrderBlockBoardView
+            onSelectSymbol={(sym) => setCurrentSymbol(sym)}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {/* 15. Smart Money Concepts */}
+        {activePage === "Smart Money Concepts" && (
+          <SmartMoneyConceptsView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {/* 16. SMC Backtest */}
+        {(activePage === "SMC Backtest" || activePage === "Backtesting") && (
+          <SMCBacktestView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            onNavigate={setActivePage}
+          />
         )}
       </main>
     </div>

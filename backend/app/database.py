@@ -129,6 +129,100 @@ CREATE TABLE IF NOT EXISTS saved_screeners (
 )
 """
 
+SAVED_CUSTOM_SCANNERS_DDL = """
+CREATE TABLE IF NOT EXISTS saved_custom_scanners (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    universe        TEXT DEFAULT 'all',
+    timeframe       TEXT DEFAULT '1D',
+    logic_mode      TEXT DEFAULT 'AND',
+    conditions_json TEXT NOT NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+)
+"""
+
+CUSTOM_WATCHLISTS_DDL = """
+CREATE TABLE IF NOT EXISTS custom_watchlists (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    symbols_json    TEXT NOT NULL DEFAULT '[]',
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+)
+"""
+
+MARKET_ALERTS_DDL = """
+CREATE TABLE IF NOT EXISTS market_alerts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol          TEXT NOT NULL,
+    alert_type      TEXT NOT NULL,
+    target_value    REAL,
+    timeframe       TEXT DEFAULT '1D',
+    note            TEXT,
+    status          TEXT DEFAULT 'ACTIVE',
+    created_at      TEXT DEFAULT (datetime('now')),
+    last_triggered  TEXT,
+    trigger_count   INTEGER DEFAULT 0
+)
+"""
+
+MARKET_ALERT_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS market_alert_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id        INTEGER,
+    symbol          TEXT NOT NULL,
+    alert_type      TEXT NOT NULL,
+    condition       TEXT NOT NULL,
+    triggered_value TEXT NOT NULL,
+    message         TEXT,
+    timestamp       TEXT DEFAULT (datetime('now'))
+)
+"""
+
+RESEARCH_TRADE_PLANS_DDL = """
+CREATE TABLE IF NOT EXISTS research_trade_plans (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol                  TEXT NOT NULL,
+    exchange                TEXT NOT NULL DEFAULT 'NSE',
+    setup_type              TEXT NOT NULL,
+    direction               TEXT NOT NULL DEFAULT 'BULLISH',
+    timeframe               TEXT NOT NULL DEFAULT '1D',
+    reference_price         REAL NOT NULL,
+    entry_zone_json         TEXT NOT NULL DEFAULT '{}',
+    stop_loss               REAL NOT NULL,
+    target_1                REAL NOT NULL,
+    target_2                REAL NOT NULL,
+    risk_reward_ratio       REAL NOT NULL,
+    setup_score             REAL NOT NULL,
+    position_size_qty       INTEGER NOT NULL DEFAULT 0,
+    position_value          REAL NOT NULL DEFAULT 0.0,
+    account_capital         REAL NOT NULL DEFAULT 100000.0,
+    risk_pct                REAL NOT NULL DEFAULT 1.0,
+    invalidation_condition  TEXT NOT NULL,
+    evidence_json           TEXT NOT NULL DEFAULT '[]',
+    risks_json              TEXT NOT NULL DEFAULT '[]',
+    status                  TEXT NOT NULL DEFAULT 'MONITORING',
+    notes                   TEXT,
+    created_at              TEXT DEFAULT (datetime('now')),
+    updated_at              TEXT DEFAULT (datetime('now'))
+)
+"""
+
+RESEARCH_NOTES_DDL = """
+CREATE TABLE IF NOT EXISTS research_notes (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol                  TEXT NOT NULL,
+    title                   TEXT,
+    note                    TEXT NOT NULL,
+    tags                    TEXT,
+    created_at              TEXT DEFAULT (datetime('now')),
+    updated_at              TEXT DEFAULT (datetime('now'))
+)
+"""
+
 
 # ---------------------------------------------------------------------------
 # Sample data  —  ILLUSTRATIVE ONLY, not live exchange prices
@@ -553,6 +647,12 @@ def init_db():
         con.execute(OHLCV_DDL)
         con.execute(SAVED_SCREENERS_DDL)
         con.execute(DATA_UPDATES_DDL)
+        con.execute(SAVED_CUSTOM_SCANNERS_DDL)
+        con.execute(CUSTOM_WATCHLISTS_DDL)
+        con.execute(MARKET_ALERTS_DDL)
+        con.execute(MARKET_ALERT_HISTORY_DDL)
+        con.execute(RESEARCH_TRADE_PLANS_DDL)
+        con.execute(RESEARCH_NOTES_DDL)
 
         # Add adj_close column if upgrading from old schema
         try:
@@ -565,7 +665,77 @@ def init_db():
         if count == 0:
             con.executemany(_INSERT_SQL, SAMPLE_STOCKS)
 
+        # Seed VolumeLens 7-point breakout preset into saved_screeners if missing
+        try:
+            vl_check = con.execute("SELECT COUNT(*) FROM saved_screeners WHERE name LIKE 'VolumeLens%'").fetchone()[0]
+            if vl_check == 0:
+                import json
+                vl_config = json.dumps({
+                    "min_relative_volume": 1.5,
+                    "min_rsi": 55.0,
+                    "max_rsi": 70.0,
+                    "max_debt_equity": 1.0,
+                    "min_roe": 12.0,
+                    "page_size": 50,
+                })
+                con.execute(
+                    "INSERT INTO saved_screeners (name, description, config_json) VALUES (?, ?, ?)",
+                    (
+                        "VolumeLens 7-Point Breakout Strategy",
+                        "Signature multi-factor setup: 20-day consolidation breakout, RVOL >= 1.5x, stacked MAs, RSI 55-70, D/E <= 1.0, ROE >= 12%.",
+                        vl_config,
+                    ),
+                )
+        except Exception:
+            pass
+
+        # Seed initial custom watchlists if empty
+        try:
+            wl_count = con.execute("SELECT COUNT(*) FROM custom_watchlists").fetchone()[0]
+            if wl_count == 0:
+                import json
+                default_wl = [
+                    ("Core NIFTY Leaders", "Large-cap compounders and market leaders", json.dumps(["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "BHARTIARTL"])),
+                    ("High Momentum & Breakouts", "Active breakout and high RVOL candidates", json.dumps(["TRENT", "TATAMOTORS", "SUNPHARMA", "LT"])),
+                    ("Capital Goods & Defense", "Heavy engineering and defense focus", json.dumps(["LT", "NTPC", "POWERGRID", "JSWSTEEL"])),
+                ]
+                con.executemany(
+                    "INSERT INTO custom_watchlists (name, description, symbols_json) VALUES (?, ?, ?)",
+                    default_wl,
+                )
+        except Exception:
+            pass
+
+        # Seed initial market alerts if empty
+        try:
+            alt_count = con.execute("SELECT COUNT(*) FROM market_alerts").fetchone()[0]
+            if alt_count == 0:
+                default_alerts = [
+                    ("RELIANCE", "PRICE_ABOVE", 2500.0, "1D", "Key resistance breakout test", "ACTIVE", 0),
+                    ("TCS", "RSI_BELOW", 35.0, "1D", "Potential mean reversion dip", "ACTIVE", 1),
+                    ("TATAMOTORS", "VOLUME_SPIKE", 1.8, "1D", "Institutional volume absorption", "ACTIVE", 2),
+                    ("HDFCBANK", "PRICE_BELOW", 1650.0, "1D", "Major swing support violation", "ACTIVE", 0),
+                ]
+                con.executemany(
+                    "INSERT INTO market_alerts (symbol, alert_type, target_value, timeframe, note, status, trigger_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    default_alerts,
+                )
+        except Exception:
+            pass
+
         con.commit()
+
+    # Initialise fundamental data tables (additive)
+    try:
+        from app.fundamental_db import init_fundamental_tables
+        init_fundamental_tables()
+        from app.services.fundamental_seeder import seed_fundamental_data
+        seed_fundamental_data()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Could not initialise fundamental tables: %s", e)
+
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +841,286 @@ def delete_saved_screener(screener_id: int) -> bool:
         cur = con.execute("DELETE FROM saved_screeners WHERE id = ?", (screener_id,))
         con.commit()
         return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Saved Custom Scanners (Phase 11)
+# ---------------------------------------------------------------------------
+
+def save_custom_scanner(
+    name: str,
+    description: str,
+    universe: str,
+    timeframe: str,
+    logic_mode: str,
+    conditions_json: str,
+) -> int:
+    with connect() as con:
+        cur = con.execute(
+            "INSERT INTO saved_custom_scanners (name, description, universe, timeframe, logic_mode, conditions_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, description, universe, timeframe, logic_mode, conditions_json),
+        )
+        con.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
+def list_custom_scanners() -> list[dict]:
+    with connect() as con:
+        rows = con.execute(
+            "SELECT id, name, description, universe, timeframe, logic_mode, conditions_json, created_at, updated_at "
+            "FROM saved_custom_scanners ORDER BY updated_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_custom_scanner(scanner_id: int) -> Optional[dict]:
+    with connect() as con:
+        row = con.execute(
+            "SELECT id, name, description, universe, timeframe, logic_mode, conditions_json, created_at, updated_at "
+            "FROM saved_custom_scanners WHERE id = ?",
+            (scanner_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_custom_scanner(
+    scanner_id: int,
+    name: str,
+    description: str,
+    universe: str,
+    timeframe: str,
+    logic_mode: str,
+    conditions_json: str,
+) -> bool:
+    with connect() as con:
+        cur = con.execute(
+            "UPDATE saved_custom_scanners SET name = ?, description = ?, universe = ?, timeframe = ?, "
+            "logic_mode = ?, conditions_json = ?, updated_at = datetime('now') WHERE id = ?",
+            (name, description, universe, timeframe, logic_mode, conditions_json, scanner_id),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def delete_custom_scanner(scanner_id: int) -> bool:
+    with connect() as con:
+        cur = con.execute("DELETE FROM saved_custom_scanners WHERE id = ?", (scanner_id,))
+        con.commit()
+        return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Custom Watchlists (Phase 11)
+# ---------------------------------------------------------------------------
+
+def list_custom_watchlists() -> list[dict]:
+    with connect() as con:
+        rows = con.execute(
+            "SELECT id, name, description, symbols_json, created_at, updated_at "
+            "FROM custom_watchlists ORDER BY updated_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_custom_watchlist(watchlist_id: int) -> Optional[dict]:
+    with connect() as con:
+        row = con.execute(
+            "SELECT id, name, description, symbols_json, created_at, updated_at "
+            "FROM custom_watchlists WHERE id = ?",
+            (watchlist_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def create_custom_watchlist(name: str, description: str = "", symbols: Optional[list[str]] = None) -> int:
+    import json
+    symbols_json = json.dumps([s.upper() for s in (symbols or [])])
+    with connect() as con:
+        cur = con.execute(
+            "INSERT INTO custom_watchlists (name, description, symbols_json) VALUES (?, ?, ?)",
+            (name, description, symbols_json),
+        )
+        con.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
+def update_custom_watchlist(
+    watchlist_id: int,
+    name: str,
+    description: str = "",
+    symbols: Optional[list[str]] = None,
+) -> bool:
+    import json
+    symbols_json = json.dumps([s.upper() for s in (symbols or [])])
+    with connect() as con:
+        cur = con.execute(
+            "UPDATE custom_watchlists SET name = ?, description = ?, symbols_json = ?, updated_at = datetime('now') "
+            "WHERE id = ?",
+            (name, description, symbols_json, watchlist_id),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def delete_custom_watchlist(watchlist_id: int) -> bool:
+    with connect() as con:
+        cur = con.execute("DELETE FROM custom_watchlists WHERE id = ?", (watchlist_id,))
+        con.commit()
+        return cur.rowcount > 0
+
+
+def add_symbol_to_watchlist(watchlist_id: int, symbol: str) -> bool:
+    import json
+    sym = symbol.upper()
+    wl = get_custom_watchlist(watchlist_id)
+    if not wl:
+        return False
+    try:
+        symbols = json.loads(wl.get("symbols_json", "[]"))
+    except Exception:
+        symbols = []
+    if sym not in symbols:
+        symbols.append(sym)
+        return update_custom_watchlist(
+            watchlist_id=watchlist_id,
+            name=wl["name"],
+            description=wl.get("description", ""),
+            symbols=symbols,
+        )
+    return True
+
+
+def remove_symbol_from_watchlist(watchlist_id: int, symbol: str) -> bool:
+    import json
+    sym = symbol.upper()
+    wl = get_custom_watchlist(watchlist_id)
+    if not wl:
+        return False
+    try:
+        symbols = json.loads(wl.get("symbols_json", "[]"))
+    except Exception:
+        symbols = []
+    if sym in symbols:
+        symbols = [s for s in symbols if s != sym]
+        return update_custom_watchlist(
+            watchlist_id=watchlist_id,
+            name=wl["name"],
+            description=wl.get("description", ""),
+            symbols=symbols,
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Market Alerts & History (Phase 11)
+# ---------------------------------------------------------------------------
+
+def list_market_alerts(status: Optional[str] = None) -> list[dict]:
+    with connect() as con:
+        if status:
+            rows = con.execute(
+                "SELECT * FROM market_alerts WHERE status = ? ORDER BY created_at DESC",
+                (status.upper(),),
+            ).fetchall()
+        else:
+            rows = con.execute("SELECT * FROM market_alerts ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_market_alert(alert_id: int) -> Optional[dict]:
+    with connect() as con:
+        row = con.execute("SELECT * FROM market_alerts WHERE id = ?", (alert_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def create_market_alert(
+    symbol: str,
+    alert_type: str,
+    target_value: Optional[float] = None,
+    timeframe: str = "1D",
+    note: str = "",
+) -> int:
+    with connect() as con:
+        cur = con.execute(
+            "INSERT INTO market_alerts (symbol, alert_type, target_value, timeframe, note, status) "
+            "VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
+            (symbol.upper(), alert_type.upper(), target_value, timeframe, note),
+        )
+        con.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
+def update_market_alert(
+    alert_id: int,
+    status: Optional[str] = None,
+    target_value: Optional[float] = None,
+    note: Optional[str] = None,
+) -> bool:
+    fields = []
+    params = []
+    if status is not None:
+        fields.append("status = ?")
+        params.append(status.upper())
+    if target_value is not None:
+        fields.append("target_value = ?")
+        params.append(target_value)
+    if note is not None:
+        fields.append("note = ?")
+        params.append(note)
+    if not fields:
+        return False
+    params.append(alert_id)
+    with connect() as con:
+        cur = con.execute(f"UPDATE market_alerts SET {', '.join(fields)} WHERE id = ?", params)
+        con.commit()
+        return cur.rowcount > 0
+
+
+def delete_market_alert(alert_id: int) -> bool:
+    with connect() as con:
+        cur = con.execute("DELETE FROM market_alerts WHERE id = ?", (alert_id,))
+        con.commit()
+        return cur.rowcount > 0
+
+
+def record_market_alert_trigger(
+    alert_id: int,
+    symbol: str,
+    alert_type: str,
+    condition: str,
+    triggered_value: str,
+    message: str = "",
+) -> int:
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    with connect() as con:
+        cur = con.execute(
+            "INSERT INTO market_alert_history (alert_id, symbol, alert_type, condition, triggered_value, message, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (alert_id, symbol.upper(), alert_type.upper(), condition, triggered_value, message, now_iso),
+        )
+        con.execute(
+            "UPDATE market_alerts SET last_triggered = ?, trigger_count = trigger_count + 1 WHERE id = ?",
+            (now_iso, alert_id),
+        )
+        con.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
+def get_market_alert_history(limit: int = 50) -> list[dict]:
+    with connect() as con:
+        rows = con.execute(
+            "SELECT * FROM market_alert_history ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def clear_market_alert_history() -> int:
+    with connect() as con:
+        cur = con.execute("DELETE FROM market_alert_history")
+        con.commit()
+        return cur.rowcount
 
 
 
@@ -816,3 +1266,162 @@ def get_all_symbols() -> list[str]:
     with connect() as con:
         rows = con.execute("SELECT symbol FROM stocks ORDER BY symbol").fetchall()
         return [r["symbol"] for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Research Trade Plans & Notes Persistence (Phase 12)
+# ---------------------------------------------------------------------------
+
+def save_research_trade_plan(plan_data: dict) -> dict:
+    """Save or create a research trade plan in the database."""
+    import json
+    with connect() as con:
+        cur = con.execute(
+            """
+            INSERT INTO research_trade_plans (
+                symbol, exchange, setup_type, direction, timeframe,
+                reference_price, entry_zone_json, stop_loss, target_1, target_2,
+                risk_reward_ratio, setup_score, position_size_qty, position_value,
+                account_capital, risk_pct, invalidation_condition, evidence_json,
+                risks_json, status, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(plan_data.get("symbol", "")).upper(),
+                str(plan_data.get("exchange", "NSE")).upper(),
+                str(plan_data.get("setup_type", "CUSTOM")),
+                str(plan_data.get("direction", "BULLISH")).upper(),
+                str(plan_data.get("timeframe", "1D")),
+                float(plan_data.get("reference_price", 0.0)),
+                json.dumps(plan_data.get("entry_zone", {})),
+                float(plan_data.get("stop_loss", 0.0)),
+                float(plan_data.get("target_1", 0.0)),
+                float(plan_data.get("target_2", 0.0)),
+                float(plan_data.get("risk_reward_ratio", 0.0)),
+                float(plan_data.get("setup_score", 0.0)),
+                int(plan_data.get("position_size_qty", 0)),
+                float(plan_data.get("position_value", 0.0)),
+                float(plan_data.get("account_capital", 100000.0)),
+                float(plan_data.get("risk_pct", 1.0)),
+                str(plan_data.get("invalidation_condition", "")),
+                json.dumps(plan_data.get("evidence", [])),
+                json.dumps(plan_data.get("risks", [])),
+                str(plan_data.get("status", "MONITORING")).upper(),
+                plan_data.get("notes"),
+            ),
+        )
+        plan_id = cur.lastrowid
+        con.commit()
+        return get_research_trade_plan(plan_id) or {}
+
+
+def get_research_trade_plan(plan_id: int) -> Optional[dict]:
+    """Retrieve a single research trade plan by ID."""
+    import json
+    with connect() as con:
+        row = con.execute("SELECT * FROM research_trade_plans WHERE id = ?", (plan_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["entry_zone"] = json.loads(d.get("entry_zone_json") or "{}")
+            d["evidence"] = json.loads(d.get("evidence_json") or "[]")
+            d["risks"] = json.loads(d.get("risks_json") or "[]")
+        except Exception:
+            pass
+        return d
+
+
+def list_research_trade_plans(symbol: Optional[str] = None, status: Optional[str] = None) -> list[dict]:
+    """List research trade plans optionally filtered by symbol or status."""
+    import json
+    query = "SELECT * FROM research_trade_plans"
+    params = []
+    clauses = []
+    if symbol:
+        clauses.append("symbol = ?")
+        params.append(symbol.upper())
+    if status:
+        clauses.append("status = ?")
+        params.append(status.upper())
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC"
+
+    with connect() as con:
+        rows = con.execute(query, params).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["entry_zone"] = json.loads(d.get("entry_zone_json") or "{}")
+                d["evidence"] = json.loads(d.get("evidence_json") or "[]")
+                d["risks"] = json.loads(d.get("risks_json") or "[]")
+            except Exception:
+                pass
+            result.append(d)
+        return result
+
+
+def update_research_trade_plan(plan_id: int, updates: dict) -> Optional[dict]:
+    """Update status, notes, or execution review of a research trade plan."""
+    allowed = {"status", "notes"}
+    clauses = []
+    params = []
+    for k, v in updates.items():
+        if k in allowed and v is not None:
+            clauses.append(f"{k} = ?")
+            params.append(v)
+    if not clauses:
+        return get_research_trade_plan(plan_id)
+    clauses.append("updated_at = datetime('now')")
+    params.append(plan_id)
+    sql = f"UPDATE research_trade_plans SET {', '.join(clauses)} WHERE id = ?"
+    with connect() as con:
+        cur = con.execute(sql, params)
+        con.commit()
+        if cur.rowcount > 0:
+            return get_research_trade_plan(plan_id)
+        return None
+
+
+def delete_research_trade_plan(plan_id: int) -> bool:
+    """Delete a research trade plan by ID."""
+    with connect() as con:
+        cur = con.execute("DELETE FROM research_trade_plans WHERE id = ?", (plan_id,))
+        con.commit()
+        return cur.rowcount > 0
+
+
+def save_research_note(symbol: str, note: str, title: Optional[str] = None, tags: Optional[str] = None) -> dict:
+    """Save a manual qualitative research note for a stock."""
+    with connect() as con:
+        cur = con.execute(
+            "INSERT INTO research_notes (symbol, title, note, tags) VALUES (?, ?, ?, ?)",
+            (symbol.upper(), title, note, tags),
+        )
+        note_id = cur.lastrowid
+        con.commit()
+        row = con.execute("SELECT * FROM research_notes WHERE id = ?", (note_id,)).fetchone()
+        return dict(row) if row else {}
+
+
+def list_research_notes(symbol: Optional[str] = None) -> list[dict]:
+    """List research notes optionally filtered by symbol."""
+    with connect() as con:
+        if symbol:
+            rows = con.execute(
+                "SELECT * FROM research_notes WHERE symbol = ? ORDER BY created_at DESC",
+                (symbol.upper(),),
+            ).fetchall()
+        else:
+            rows = con.execute("SELECT * FROM research_notes ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_research_note(note_id: int) -> bool:
+    """Delete a research note by ID."""
+    with connect() as con:
+        cur = con.execute("DELETE FROM research_notes WHERE id = ?", (note_id,))
+        con.commit()
+        return cur.rowcount > 0

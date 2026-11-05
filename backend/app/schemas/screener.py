@@ -108,6 +108,34 @@ class ScreenRequest(BaseModel):
     min_return_1y: Optional[float] = None
     max_return_1y: Optional[float] = None
 
+    # --- Phase 6 Advanced Fundamental Metrics ---
+    min_revenue_cagr_3y: Optional[float] = None
+    max_revenue_cagr_3y: Optional[float] = None
+    min_pat_cagr_3y: Optional[float] = None
+    max_pat_cagr_3y: Optional[float] = None
+    min_interest_coverage: Optional[float] = None
+    max_interest_coverage: Optional[float] = None
+    min_cfo_pat_ratio: Optional[float] = None
+    max_cfo_pat_ratio: Optional[float] = None
+    min_peg: Optional[float] = None
+    max_peg: Optional[float] = None
+    min_quality_score: Optional[float] = None
+    max_quality_score: Optional[float] = None
+    min_free_cash_flow_cr: Optional[float] = None
+    max_free_cash_flow_cr: Optional[float] = None
+
+    # --- VolumeLens Expanded Indicators ---
+    min_ema_9: Optional[float] = None
+    max_ema_9: Optional[float] = None
+    min_atr: Optional[float] = None
+    max_atr: Optional[float] = None
+    min_mfi: Optional[float] = None
+    max_mfi: Optional[float] = None
+    min_bb_bandwidth: Optional[float] = None
+    max_bb_bandwidth: Optional[float] = None
+    min_vwap: Optional[float] = None
+    max_vwap: Optional[float] = None
+
     # --- Advanced filter builder (AND/OR groups) ---
     condition_groups: Optional[list[ConditionGroup]] = Field(
         None,
@@ -154,6 +182,14 @@ class StockResult(BaseModel):
     fii_holding: Optional[float] = None
     dii_holding: Optional[float] = None
     volume: Optional[int] = None
+    # Phase 6 Fundamental metrics
+    revenue_cagr_3y: Optional[float] = None
+    pat_cagr_3y: Optional[float] = None
+    interest_coverage: Optional[float] = None
+    cfo_pat_ratio: Optional[float] = None
+    peg: Optional[float] = None
+    quality_score: Optional[int] = None
+    free_cash_flow_cr: Optional[float] = None
 
 
 class ScreenResponse(BaseModel):
@@ -167,8 +203,16 @@ class ScreenResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Saved screener models
+# Saved screener & preset models
 # ---------------------------------------------------------------------------
+
+class DefaultPresetStrategy(BaseModel):
+    id: str
+    name: str
+    description: str
+    rationale: str
+    filters: ScreenRequest
+
 
 class SaveScreenerRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)

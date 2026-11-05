@@ -1,0 +1,136 @@
+/**
+ * Dhan Live Market Feed Client (REST snapshot & WebSocket streaming)
+ */
+
+export interface LiveQuote {
+  symbol: string;
+  security_id: string;
+  exchange_segment: string;
+  ltp: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  change?: number;
+  change_percent?: number;
+  volume?: number;
+  atp?: number;
+  ltt?: string;
+  source: "LIVE" | "DELAYED" | "HISTORICAL" | "DEMO";
+  updated_at: string;
+}
+
+export interface LiveFeedStatus {
+  status: "CONNECTED" | "DISCONNECTED" | "AUTHENTICATION_REQUIRED" | "CONNECTING" | "RATE_LIMITED" | "DISABLED";
+  authenticated: boolean;
+  live_data_enabled?: boolean;
+  subscribed_symbols: string[];
+  subscribed_count: number;
+  last_tick_time?: string;
+  ticks_received: number;
+  connected_clients: number;
+  error?: string;
+  retry_in_seconds?: number;
+}
+
+export interface LiveQuotesResponse {
+  quotes: Record<string, LiveQuote>;
+  source: "LIVE" | "DELAYED" | "HISTORICAL" | "DEMO" | "HYBRID";
+  count: number;
+}
+
+const API_BASE = "http://127.0.0.1:8000";
+const WS_BASE = "ws://127.0.0.1:8000";
+
+export async function fetchLiveQuotes(symbols?: string[]): Promise<LiveQuotesResponse> {
+  const query = symbols && symbols.length > 0 ? `?symbols=${symbols.join(",")}` : "";
+  const res = await fetch(`${API_BASE}/api/market/live/quotes${query}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch live quotes: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchLiveFeedStatus(): Promise<LiveFeedStatus> {
+  const res = await fetch(`${API_BASE}/api/market/live/status`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch live feed status: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function refreshLiveQuotes(): Promise<LiveQuotesResponse> {
+  const res = await fetch(`${API_BASE}/api/market/live/refresh`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Failed to refresh quotes: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function reconnectLiveFeed(enable: boolean = false): Promise<LiveFeedStatus> {
+  const query = enable ? "?enable=true" : "";
+  const res = await fetch(`${API_BASE}/api/market/live/reconnect${query}`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Failed to reconnect live feed: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export function subscribeMarketFeed(callbacks: {
+  onTick?: (quote: LiveQuote) => void;
+  onSnapshot?: (quotes: Record<string, LiveQuote>, feedStatus?: LiveFeedStatus) => void;
+  onStatusChange?: (status: LiveFeedStatus) => void;
+}): () => void {
+  let ws: WebSocket | null = null;
+  let isClosed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function connect() {
+    if (isClosed) return;
+    try {
+      ws = new WebSocket(`${WS_BASE}/ws/market-feed`);
+
+      ws.onopen = () => {
+        // Send initial ping to verify connection
+        ws?.send(JSON.stringify({ type: "PING" }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "TICK" && data.quote && callbacks.onTick) {
+            callbacks.onTick(data.quote);
+          } else if (data.type === "SNAPSHOT" && data.quotes && callbacks.onSnapshot) {
+            callbacks.onSnapshot(data.quotes, data.feed_status);
+          } else if (data.type === "STATUS_UPDATE" && data.feed_status && callbacks.onStatusChange) {
+            callbacks.onStatusChange(data.feed_status);
+          }
+        } catch {
+          // ignore non-json frames
+        }
+      };
+
+      ws.onclose = () => {
+        if (!isClosed) {
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+    } catch {
+      if (!isClosed) {
+        reconnectTimer = setTimeout(connect, 3000);
+      }
+    }
+  }
+
+  connect();
+
+  return () => {
+    isClosed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (ws) ws.close();
+  };
+}

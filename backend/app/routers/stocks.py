@@ -42,6 +42,31 @@ def stock_detail(symbol: str):
     }
 
 
+@router.get("/stocks/{symbol}/history")
+def stock_history(symbol: str, interval: str = "daily", limit: int = 300):
+    """Get historical OHLCV candles for charting."""
+    sym_upper = symbol.upper()
+    item = get_stock(sym_upper)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Stock {sym_upper} not found")
+    bars = get_bars(sym_upper, interval=interval)
+    if not bars:
+        try:
+            from app.providers.manager import get_provider
+            provider = get_provider()
+            bars = provider.get_daily_candles(sym_upper, period="1y")
+        except Exception:
+            bars = []
+    sliced = bars[-limit:] if bars else []
+    return {
+        "symbol": sym_upper,
+        "interval": interval,
+        "count": len(sliced),
+        "bars": sliced,
+        "data_source": item.get("data_source", "demo"),
+    }
+
+
 @router.get("/market/overview")
 def market_overview():
     """Return market overview data."""

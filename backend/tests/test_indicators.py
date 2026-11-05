@@ -35,6 +35,9 @@ def test(name, func):
         print(f"  FAIL {name}: {e}")
         failed += 1
 
+test.__test__ = False
+
+
 
 def make_bars(n=300, start_price=100.0, volatility=2.0):
     """Generate synthetic OHLCV bars for testing."""
@@ -243,5 +246,6 @@ def test_bars_count_in_result():
 test("bars_count matches input length", test_bars_count_in_result)
 
 
-print(f"\n{passed} passed, {failed} failed out of {passed + failed} tests.")
-sys.exit(1 if failed else 0)
+if __name__ == "__main__":
+    print(f"\n{passed} passed, {failed} failed out of {passed + failed} tests.")
+    sys.exit(1 if failed else 0)

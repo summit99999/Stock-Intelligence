@@ -27,6 +27,7 @@ import type {
 import {
   deletePreset,
   exportCSV,
+  getDefaultPresets,
   getJobStatus,
   getMarketDataStatus,
   getPresets,
@@ -36,6 +37,7 @@ import {
   triggerDataUpdate,
 } from "../api/screener";
 import type { MarketDataStatus, JobStatus } from "../api/screener";
+import CsvImportModal from "./CsvImportModal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,6 +103,12 @@ const ALL_FIELDS = [
   { value: "sma_50", label: "SMA 50" },
   { value: "sma_100", label: "SMA 100" },
   { value: "sma_200", label: "SMA 200" },
+  { value: "revenue_cagr_3y", label: "Revenue CAGR 3Y (%)" },
+  { value: "pat_cagr_3y", label: "PAT CAGR 3Y (%)" },
+  { value: "interest_coverage", label: "Interest Coverage" },
+  { value: "cfo_pat_ratio", label: "CFO / PAT" },
+  { value: "peg", label: "PEG Ratio" },
+  { value: "quality_score", label: "Quality Score (0-100)" },
 ];
 
 const OPERATORS: { value: Operator; label: string }[] = [
@@ -121,11 +129,12 @@ const TABLE_COLUMNS: { key: keyof StockResult; label: string; align?: string; fo
   { key: "sector", label: "SECTOR" },
   { key: "close", label: "PRICE (₹)", align: "right", format: (v) => `₹${fmt(v as number)}` },
   { key: "daily_change_pct", label: "CHG %", align: "right", format: (v) => v != null ? `${(v as number) > 0 ? "+" : ""}${fmt(v as number)}%` : "—", colorize: true },
+  { key: "quality_score", label: "SCORE", align: "right", format: (v) => v != null ? `${v}/100` : "—" },
   { key: "market_cap_cr", label: "MCAP (Cr)", align: "right", format: (v) => fmtInt(v as number) },
   { key: "pe", label: "P/E", align: "right", format: (v) => fmt(v as number, 1) },
   { key: "roe", label: "ROE %", align: "right", format: (v) => fmt(v as number, 1) },
   { key: "roce", label: "ROCE %", align: "right", format: (v) => fmt(v as number, 1) },
-  { key: "revenue_growth_pct", label: "REV GR %", align: "right", format: (v) => fmt(v as number, 1), colorize: true },
+  { key: "revenue_cagr_3y", label: "REV CAGR 3Y", align: "right", format: (v) => v != null ? `${fmt(v as number, 1)}%` : "—", colorize: true },
   { key: "profit_growth_pct", label: "PAT GR %", align: "right", format: (v) => fmt(v as number, 1), colorize: true },
   { key: "rsi", label: "RSI", align: "right", format: (v) => fmt(v as number, 1) },
   { key: "relative_volume", label: "REL VOL", align: "right", format: (v) => fmt(v as number, 1) },
@@ -156,7 +165,11 @@ function emptyGroup(): ConditionGroup {
 // MAIN COMPONENT
 // ============================================================================
 
-export default function StockScreener() {
+interface StockScreenerProps {
+  onOpenResearch?: (symbol: string) => void;
+}
+
+export default function StockScreener({ onOpenResearch }: StockScreenerProps = {}) {
   // --- State ---
   const [filters, setFilters] = useState<ScreenRequest>(defaultFilters());
   const [response, setResponse] = useState<ScreenResponse | null>(null);
@@ -168,12 +181,14 @@ export default function StockScreener() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [groups, setGroups] = useState<ConditionGroup[]>([]);
 
-  // Saved presets
+  // Saved presets & institutional presets
   const [presets, setPresets] = useState<SavedScreener[]>([]);
+  const [defaultPresets, setDefaultPresets] = useState<SavedScreener[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [presetDesc, setPresetDesc] = useState("");
   const [showPresets, setShowPresets] = useState(false);
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
 
   // Collapsible sections
   const [expandFundamental, setExpandFundamental] = useState(true);
@@ -194,6 +209,9 @@ export default function StockScreener() {
       });
     getPresets()
       .then(setPresets)
+      .catch(() => {});
+    getDefaultPresets()
+      .then(setDefaultPresets)
       .catch(() => {});
     getMarketDataStatus()
       .then(setDataStatus)
@@ -388,6 +406,9 @@ export default function StockScreener() {
           </p>
         </div>
         <div className="screener-actions">
+          <button className="scr-btn scr-btn-outline" onClick={() => setIsCsvModalOpen(true)}>
+            📥 Import CSV
+          </button>
           <button className="scr-btn scr-btn-outline" onClick={() => setShowPresets(!showPresets)}>
             {showPresets ? "Hide" : "Presets"} ({presets.length})
           </button>
@@ -405,6 +426,35 @@ export default function StockScreener() {
           </button>
         </div>
       </div>
+
+      {/* Institutional Presets Bar */}
+      {defaultPresets.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#26c78b", whiteSpace: "nowrap" }}>
+            Institutional Strategies:
+          </span>
+          {defaultPresets.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => loadPreset(p)}
+              className="scr-btn scr-btn-ghost"
+              style={{
+                fontSize: "0.75rem",
+                padding: "3px 10px",
+                borderRadius: "14px",
+                background: "#161c28",
+                border: "1px solid #2a3547",
+                color: "#e2e8f0",
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+              }}
+              title={p.description}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Data status bar */}
       <div className="notice" style={{ marginBottom: 14 }}>
@@ -569,6 +619,12 @@ export default function StockScreener() {
                 <SingleFilter label="Max Promoter Pledge (%)" filterKey="max_promoter_pledging" filters={filters} setFilter={setFilter} />
                 <SingleFilter label="Min FII Holding (%)" filterKey="min_fii_holding" filters={filters} setFilter={setFilter} />
                 <SingleFilter label="Min DII Holding (%)" filterKey="min_dii_holding" filters={filters} setFilter={setFilter} />
+                <SingleFilter label="Min Quality Score (0-100)" filterKey="min_quality_score" filters={filters} setFilter={setFilter} />
+                <SingleFilter label="Min 3Y Rev CAGR (%)" filterKey="min_revenue_cagr_3y" filters={filters} setFilter={setFilter} />
+                <SingleFilter label="Min 3Y PAT CAGR (%)" filterKey="min_pat_cagr_3y" filters={filters} setFilter={setFilter} />
+                <SingleFilter label="Min CFO / PAT" filterKey="min_cfo_pat_ratio" filters={filters} setFilter={setFilter} />
+                <SingleFilter label="Min Interest Coverage" filterKey="min_interest_coverage" filters={filters} setFilter={setFilter} />
+                <SingleFilter label="Max PEG Ratio" filterKey="max_peg" filters={filters} setFilter={setFilter} />
               </div>
             )}
           </div>
@@ -796,7 +852,38 @@ export default function StockScreener() {
                                 key={col.key}
                                 className={`${col.align === "right" ? "right" : ""} ${cls}`}
                               >
-                                {col.key === "symbol" ? <strong>{display}</strong> : display}
+                                {col.key === "symbol" ? (
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                    <strong
+                                      style={{ cursor: onOpenResearch ? "pointer" : "default" }}
+                                      onClick={() => onOpenResearch?.(stock.symbol)}
+                                    >
+                                      {display}
+                                    </strong>
+                                    {onOpenResearch && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onOpenResearch(stock.symbol);
+                                        }}
+                                        title="Open in Company Research"
+                                        style={{
+                                          fontSize: "10px",
+                                          padding: "1px 5px",
+                                          borderRadius: "4px",
+                                          background: "rgba(38, 199, 139, 0.15)",
+                                          color: "#26c78b",
+                                          border: "1px solid rgba(38, 199, 139, 0.3)",
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        Research
+                                      </button>
+                                    )}
+                                  </span>
+                                ) : (
+                                  display
+                                )}
                               </td>
                             );
                           })}
@@ -871,6 +958,16 @@ export default function StockScreener() {
           {" · "}{response?.total ?? 0} results
         </span>
       </footer>
+
+      {/* CSV Import Modal */}
+      <CsvImportModal
+        isOpen={isCsvModalOpen}
+        onClose={() => setIsCsvModalOpen(false)}
+        onImportSuccess={() => {
+          setIsCsvModalOpen(false);
+          runScreen();
+        }}
+      />
     </div>
   );
 }

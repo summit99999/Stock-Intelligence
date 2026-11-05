@@ -128,13 +128,43 @@ def get_provider_manager() -> ProviderManager:
     """Return the global ProviderManager, creating it on first call."""
     global _manager
     if _manager is None:
+        import os
         _manager = ProviderManager()
-        # Auto-register yfinance if available
-        try:
-            from app.providers.yfinance_provider import YFinanceProvider
-            yf_provider = YFinanceProvider()
-            if yf_provider.is_available():
-                _manager.register(yf_provider)
-        except Exception as e:
-            logger.warning("Could not register YFinance provider: %s", e)
+        pref = os.getenv("MARKET_DATA_PROVIDER", "yfinance").strip().lower()
+
+        if pref == "dhan":
+            # Prefer Dhan, fallback to YFinance
+            try:
+                from app.providers.dhan_provider import DhanProvider
+                dp = DhanProvider()
+                if dp.is_available():
+                    _manager.register(dp)
+            except Exception as e:
+                logger.warning("Could not register Dhan provider: %s", e)
+
+            try:
+                from app.providers.yfinance_provider import YFinanceProvider
+                yf = YFinanceProvider()
+                if yf.is_available():
+                    _manager.register(yf)
+            except Exception as e:
+                logger.warning("Could not register YFinance fallback provider: %s", e)
+        else:
+            # Default: Prefer YFinance, fallback to Dhan
+            try:
+                from app.providers.yfinance_provider import YFinanceProvider
+                yf = YFinanceProvider()
+                if yf.is_available():
+                    _manager.register(yf)
+            except Exception as e:
+                logger.warning("Could not register YFinance provider: %s", e)
+
+            try:
+                from app.providers.dhan_provider import DhanProvider
+                dp = DhanProvider()
+                if dp.is_available():
+                    _manager.register(dp)
+            except Exception as e:
+                logger.warning("Could not register Dhan provider: %s", e)
+
     return _manager

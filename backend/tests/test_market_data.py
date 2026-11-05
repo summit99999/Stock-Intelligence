@@ -38,24 +38,32 @@ from app.services.market_data_service import update_stock_data, _recalculate_ind
 from app.providers.manager import get_provider_manager
 from app.providers.yfinance_provider import YFinanceProvider
 
+import pytest
+
 passed = 0
 failed = 0
 skipped = 0
 
 
 def test(name, func, requires_network=False):
+    if __name__ != "__main__":
+        return
     global passed, failed, skipped
     try:
         func()
         print(f"  PASS {name}")
         passed += 1
     except Exception as e:
-        if requires_network and "urlopen" in str(e).lower():
-            print(f"  SKIP {name}: Network unavailable")
+        if requires_network and ("urlopen" in str(e).lower() or "delisted" in str(e).lower() or "curl" in str(e).lower() or "dns" in str(e).lower()):
+            print(f"  SKIP {name}: Network unavailable ({e})")
             skipped += 1
         else:
             print(f"  FAIL {name}: {e}")
             failed += 1
+
+test.__test__ = False
+
+
 
 
 # --- Database tests ---
@@ -182,6 +190,7 @@ test("Indicators from synthetic OHLCV data", test_indicators_from_synthetic)
 
 # --- Network-dependent tests (may be skipped) ---
 
+@pytest.mark.skipif(os.getenv("RUN_NETWORK_TESTS") != "1", reason="Requires external network access")
 def test_download_reliance():
     result = update_stock_data("RELIANCE", exchange="NSE", period="1mo", force=True)
     assert result["status"] in ("updated", "cached"), f"Status: {result['status']}, Error: {result.get('error')}"
@@ -195,24 +204,62 @@ def test_download_reliance():
 test("Download RELIANCE.NS history", test_download_reliance, requires_network=True)
 
 
+@pytest.mark.skipif(os.getenv("RUN_NETWORK_TESTS") != "1", reason="Requires external network access")
 def test_download_tcs():
     result = update_stock_data("TCS", exchange="NSE", period="1mo", force=True)
     assert result["status"] in ("updated", "cached"), f"Status: {result['status']}, Error: {result.get('error')}"
 test("Download TCS.NS history", test_download_tcs, requires_network=True)
 
 
+@pytest.mark.skipif(os.getenv("RUN_NETWORK_TESTS") != "1", reason="Requires external network access")
 def test_cached_data():
     """After downloading, data should be cached — second call should be fast."""
     result = update_stock_data("RELIANCE", exchange="NSE", period="1mo", force=False)
-    # Should use cache or do incremental update
     assert result["status"] in ("cached", "updated"), f"Status: {result['status']}"
 test("Read cached data (no re-download)", test_cached_data, requires_network=True)
 
 
+@pytest.mark.skipif(os.getenv("RUN_NETWORK_TESTS") != "1", reason="Requires external network access")
 def test_invalid_ticker():
     result = update_stock_data("ZZZZZZZ_INVALID_99", exchange="NSE", period="1mo", force=True)
     assert result["status"] in ("no_data", "error"), f"Expected error, got: {result['status']}"
 test("Handle invalid ticker gracefully", test_invalid_ticker, requires_network=True)
+
+
+# --- Mocked Offline Tests for Network Pipeline ---
+from unittest.mock import patch
+import pandas as pd
+
+def test_mocked_download_reliance():
+    fake_df = pd.DataFrame([
+        {"date": "2026-10-01", "open": 2800.0, "high": 2850.0, "low": 2790.0, "close": 2840.0, "volume": 1000000},
+        {"date": "2026-10-02", "open": 2840.0, "high": 2880.0, "low": 2830.0, "close": 2870.0, "volume": 1200000},
+    ])
+    with patch("app.providers.yfinance_provider.YFinanceProvider.fetch_history", return_value=fake_df):
+        result = update_stock_data("RELIANCE", exchange="NSE", period="1mo", force=True)
+        assert result["status"] in ("updated", "cached")
+        stock = get_stock("RELIANCE")
+        assert stock is not None
+test("Mocked download RELIANCE history offline", test_mocked_download_reliance)
+
+
+def test_mocked_download_tcs():
+    fake_df = pd.DataFrame([
+        {"date": "2026-10-01", "open": 3400.0, "high": 3450.0, "low": 3390.0, "close": 3440.0, "volume": 500000},
+        {"date": "2026-10-02", "open": 3440.0, "high": 3480.0, "low": 3430.0, "close": 3470.0, "volume": 600000},
+    ])
+    with patch("app.providers.yfinance_provider.YFinanceProvider.fetch_history", return_value=fake_df):
+        result = update_stock_data("TCS", exchange="NSE", period="1mo", force=True)
+        assert result["status"] in ("updated", "cached")
+test("Mocked download TCS history offline", test_mocked_download_tcs)
+
+
+def test_mocked_invalid_ticker():
+    with patch("app.providers.yfinance_provider.YFinanceProvider.fetch_history", return_value=pd.DataFrame()):
+        result = update_stock_data("ZZZZZZZ_INVALID_99", exchange="NSE", period="1mo", force=True)
+        assert result["status"] in ("no_data", "error")
+test("Mocked invalid ticker handling offline", test_mocked_invalid_ticker)
+
 
 
 # --- Screener integration ---
@@ -249,5 +296,6 @@ def test_cleanup():
 test("Cleanup test data", test_cleanup)
 
 
-print(f"\n{passed} passed, {failed} failed, {skipped} skipped out of {passed + failed + skipped} tests.")
-sys.exit(1 if failed else 0)
+if __name__ == "__main__":
+    print(f"\n{passed} passed, {failed} failed, {skipped} skipped out of {passed + failed + skipped} tests.")
+    sys.exit(1 if failed else 0)

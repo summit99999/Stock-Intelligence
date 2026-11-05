@@ -49,6 +49,11 @@ export async function exportCSV(request: ScreenRequest): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** List default institutional presets. */
+export async function getDefaultPresets(): Promise<SavedScreener[]> {
+  return apiFetch<SavedScreener[]>("/api/screener/presets/default");
+}
+
 /** List saved presets. */
 export async function getPresets(): Promise<SavedScreener[]> {
   return apiFetch<SavedScreener[]>("/api/screener/presets");

@@ -104,6 +104,32 @@ def data_status():
     )
 
 
+@router.get("/market/provider/status")
+def provider_status():
+    """Return granular diagnostic information about market data providers."""
+    import os
+    from app.config import get_dhan_config
+    from app.services.token_store import get_token
+
+    mgr = get_provider_manager()
+    attr = mgr.get_attribution()
+    dhan_cfg = get_dhan_config()
+    tok = get_token()
+
+    dhan_avail = bool(dhan_cfg.is_configured and tok and tok.access_token and not tok.is_expired)
+
+    return {
+        "active_provider": attr.name if attr else "None",
+        "provider_data_type": attr.data_type if attr else "None",
+        "provider_note": attr.note if attr else "",
+        "preferred_provider": os.getenv("MARKET_DATA_PROVIDER", "yfinance").lower(),
+        "dhan_configured": dhan_cfg.is_configured,
+        "dhan_token_valid": bool(tok and tok.access_token and not tok.is_expired),
+        "dhan_live_enabled": dhan_cfg.live_data_enabled,
+        "yfinance_available": True,
+    }
+
+
 @router.get("/market-data/jobs/{job_id}", response_model=JobStatus)
 def job_status(job_id: str):
     """Get the status of a background update job."""
