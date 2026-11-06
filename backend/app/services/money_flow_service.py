@@ -136,7 +136,7 @@ def _parse_timestamp_to_ist(ts_str: Any) -> tuple[Optional[str], Optional[str]]:
 
 def calculate_historical_time_of_day_rvol(
     symbol: str,
-    today_cumulative_volume: float,
+    today_cumulative_volume: float = 0.0,
     current_time_str: Optional[str] = None,
     lookback_sessions: int = 20,
     min_required_sessions: int = 3,
@@ -351,6 +351,17 @@ def calculate_historical_time_of_day_rvol(
             "label": f"UNAVAILABLE (Zero volume baseline at {target_time[:5]} IST)",
         }
 
+    # If today_cumulative_volume was not supplied (or <= 0), attempt to derive it from today's observed bars
+    if today_cumulative_volume <= 0.0 and effective_today in sessions:
+        today_s_bars = sessions[effective_today]
+        is_cas_today, _ = is_cas_eligible_security(symbol, effective_today)
+        if is_cas_today:
+            today_cont_bars = [b for b in today_s_bars if b["time"] <= "15:10:00"]
+        else:
+            today_cont_bars = [b for b in today_s_bars if b["time"] <= "15:25:00"]
+        today_bars_up_to_t = [b for b in today_cont_bars if b["time"] <= target_time]
+        today_cumulative_volume = float(sum(b["volume"] for b in today_bars_up_to_t))
+
     tod_rvol = round(today_cumulative_volume / avg_hist_cum_vol, 2)
     session_count = len(selected_cum_volumes)
 
@@ -367,7 +378,10 @@ def calculate_historical_time_of_day_rvol(
         "tod_rvol_status": active_status,
         "tod_source": active_source,
         "tod_data_quality": active_quality,
+        "today_cumulative_volume": round(today_cumulative_volume, 1),
+        "numerator": round(today_cumulative_volume, 1),
         "historical_avg_volume": round(avg_hist_cum_vol, 1),
+        "denominator": round(avg_hist_cum_vol, 1),
         "tod_valid_sessions": session_count,
         "sessions_evaluated": session_count,
         "target_time": target_time,

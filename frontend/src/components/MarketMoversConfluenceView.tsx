@@ -1457,7 +1457,7 @@ function MoverTablePanel({
                         No stocks qualify under True Time-of-Day RVOL
                       </div>
                       <div style={{ fontSize: "11px", color: "#64748b", maxWidth: "480px", margin: "0 auto" }}>
-                        All 46,500 stored 5m bars in database are synthetic calibrated records. Strict verification isolates them from production rankings. Toggle <strong>"Synthetic Demo Data ON"</strong> to preview algorithmic U-curve calculations.
+                        Observed intraday data is verified for pilot securities (RELIANCE, TCS, HDFCBANK) while 46,500 synthetic bars remain isolated. Adjust filters or toggle <strong>"Synthetic Demo Data ON"</strong> to preview simulated algorithmic calculations across all stocks.
                       </div>
                     </div>
                   ) : (
