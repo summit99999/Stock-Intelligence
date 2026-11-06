@@ -48,6 +48,448 @@ class DataMode(str, Enum):
     UNAVAILABLE = "UNAVAILABLE"
 
 
+class DataSourceClassification(str, Enum):
+    """
+    Strict market data source provenance classification (Phase 14.3).
+    Guarantees that synthetic, calibrated, or mock bars are never conflated
+    with genuine exchange-observed historical or live data.
+    """
+    OBSERVED_LIVE = "OBSERVED_LIVE"
+    OBSERVED_DELAYED = "OBSERVED_DELAYED"
+    OBSERVED_HISTORICAL = "OBSERVED_HISTORICAL"
+    SYNTHETIC = "SYNTHETIC"
+    UNKNOWN = "UNKNOWN"
+
+
+def classify_data_source(source_str: Optional[str]) -> DataSourceClassification:
+    """
+    Strictly classify bar or quote data source into standardized provenance categories.
+    CRITICAL RULE: Never classify a record as observed solely because it has OHLCV values or timestamps.
+    """
+    if not source_str:
+        return DataSourceClassification.UNKNOWN
+
+    s = str(source_str).strip().lower()
+
+    # Synthetic / simulated / calibrated markers
+    synthetic_indicators = (
+        "synthetic", "calibrated", "deterministic", "simulated",
+        "mock", "dummy", "offline_deterministic", "demo_feed"
+    )
+    if any(k in s for k in synthetic_indicators):
+        return DataSourceClassification.SYNTHETIC
+
+    # Live observed feeds
+    if s in ("dhan_live", "dhan_broker_live", "live_stream", "exchange_tick_live"):
+        return DataSourceClassification.OBSERVED_LIVE
+
+    # Delayed observed feeds
+    if s in ("yfinance_delayed", "delayed_stream", "15m_delayed"):
+        return DataSourceClassification.OBSERVED_DELAYED
+
+    # Historical observed feeds
+    if s in (
+        "yfinance", "yfinance_historical_5m", "dhan", "dhan_historical",
+        "dhan_historical_5m", "nse_official_historical", "sqlite_observed"
+    ):
+        return DataSourceClassification.OBSERVED_HISTORICAL
+
+    return DataSourceClassification.UNKNOWN
+
+
+def verify_bar_provenance(
+    bar: dict[str, Any],
+    strict_audit: bool = False,
+    check_db_provenance: bool = False,
+    symbol: Optional[str] = None,
+    interval: str = "5m",
+) -> tuple[DataSourceClassification, str, dict[str, Any]]:
+    """
+    Strengthened Provenance Verification Engine (Phase 14.4).
+    CRITICAL PROVENANCE RULES:
+    1. Never infer observed provenance from the presence of OHLCV values, timestamps,
+       or a manually supplied source string alone when strict audit is requested.
+    2. A bar claiming observed status under strict audit MUST possess verified ingestion metadata:
+       - ingestion_run_id
+       - provider identifier
+       - provider_symbol
+       - retrieval_timestamp (UTC)
+       - raw_response_hash
+       OR have a matching verified record in the database bar_provenance table.
+    3. Synthetic records remain SYNTHETIC, even if their source field is changed or disguised.
+    4. Spoofed or unverified source strings without audit trail are strictly classified as UNKNOWN.
+    """
+    if not bar:
+        return DataSourceClassification.UNKNOWN, "Empty bar record", {}
+
+    source_val = str(bar.get("source") or "").strip().lower()
+    prov_class_val = str(bar.get("provenance_classification") or "").strip().upper()
+    is_synthetic_marker = bool(
+        bar.get("is_synthetic") or
+        prov_class_val == "SYNTHETIC" or
+        any(k in source_val for k in ("synthetic", "calibrated", "deterministic", "simulated", "mock", "dummy", "offline"))
+    )
+
+    if is_synthetic_marker:
+        provenance_dict = {
+            "provider": bar.get("provider") or "synthetic_calibrated_engine",
+            "provenance_classification": DataSourceClassification.SYNTHETIC.value,
+            "data_quality_status": "SYNTHETIC_SIMULATION",
+            "ingestion_run_id": bar.get("ingestion_run_id"),
+        }
+        return DataSourceClassification.SYNTHETIC, "SYNTHETIC_SIMULATION: Calibrated offline simulation bar", provenance_dict
+
+    # Check for explicit spoofing marker
+    if bar.get("is_spoofed") or bar.get("spoofed"):
+        return DataSourceClassification.UNKNOWN, "UNVERIFIED_OR_SPOOFED_SOURCE: Injected source string without valid exchange audit trail", {}
+
+    # Check for attached ingestion audit metadata
+    has_audit_metadata = bool(
+        bar.get("ingestion_run_id") and
+        bar.get("provider") and
+        (bar.get("raw_response_hash") or bar.get("retrieval_timestamp"))
+    )
+
+    if has_audit_metadata:
+        raw_class = classify_data_source(bar.get("source") or bar.get("provider"))
+        if raw_class in (
+            DataSourceClassification.OBSERVED_HISTORICAL,
+            DataSourceClassification.OBSERVED_DELAYED,
+            DataSourceClassification.OBSERVED_LIVE,
+        ):
+            provenance_dict = {
+                "provider": bar.get("provider"),
+                "provider_symbol": bar.get("provider_symbol"),
+                "exchange": bar.get("exchange", "NSE"),
+                "segment": bar.get("segment", "EQUITY"),
+                "interval": bar.get("interval", interval),
+                "ingestion_run_id": bar.get("ingestion_run_id"),
+                "retrieval_timestamp": bar.get("retrieval_timestamp"),
+                "raw_response_hash": bar.get("raw_response_hash"),
+                "provenance_classification": raw_class.value,
+                "data_quality_status": bar.get("data_quality_status", "VERIFIED_OBSERVED_INTRADAY"),
+            }
+            return raw_class, f"VERIFIED_OBSERVED: Validated against ingestion run {bar.get('ingestion_run_id')}", provenance_dict
+
+    # Check database bar_provenance table if requested
+    if check_db_provenance:
+        sym = symbol or bar.get("symbol")
+        ts = bar.get("timestamp")
+        if sym and ts:
+            try:
+                from app.database import get_bar_provenance
+                db_prov = get_bar_provenance(sym, interval, ts)
+                if db_prov:
+                    c_val = DataSourceClassification(db_prov.get("provenance_classification", "UNKNOWN"))
+                    return c_val, f"VERIFIED_OBSERVED_DB: Validated in bar_provenance ({db_prov.get('ingestion_run_id')})", db_prov
+            except Exception as e:
+                logger.debug("bar_provenance lookup exception: %s", e)
+
+    # When strict audit is enabled, raw source string without audit trail is rejected as UNKNOWN
+    if strict_audit:
+        if source_val in (
+            "yfinance", "yfinance_historical_5m", "dhan", "dhan_historical",
+            "dhan_historical_5m", "nse_official_historical", "sqlite_observed"
+        ):
+            return DataSourceClassification.UNKNOWN, "UNVERIFIED_OR_SPOOFED_SOURCE: Bar lacks verified ingestion run ID and provider retrieval audit trail", {}
+
+    # Non-strict backward-compatible path for simple source classification
+    base_class = classify_data_source(bar.get("source"))
+    if base_class != DataSourceClassification.UNKNOWN:
+        return base_class, f"CLASSIFIED_SOURCE: {base_class.value}", {"source": bar.get("source")}
+
+    return DataSourceClassification.UNKNOWN, "MISSING_OR_UNRECOGNIZED_SOURCE", {}
+
+
+def validate_session_completeness(
+    session_date: str,
+    bars: list[dict[str, Any]],
+    expected_interval: str = "5m",
+    symbol: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Exact Intraday Session Completeness Validator (Phase 14.6 CAS-Aware Architecture).
+    Grounding:
+    - NSE Circulars NSE/CMTR/72394, NSE/CMTR/73362, NSE/CMTR/74466.
+    - Go-live August 03, 2026 for Closing Auction Session (CAS) in F&O cash equities.
+
+    Validates:
+    - Security- and Date-aware continuous session schedule:
+      * CAS-eligible securities post-Aug 3, 2026: 72 continuous 5m bars (09:15 to 15:10 IST).
+      * Standard regular securities: 75 continuous 5m bars (09:15 to 15:25 IST).
+      * Special sessions: Muhurat (12 bars), DR Drill (21 bars).
+    - Separation of continuous trading from Closing Auction transition & confirmation bars.
+    - Missing continuous intervals (distinguishes interior gaps from boundary omissions).
+    - Duplicate timestamps within continuous session.
+    - Out-of-session timestamps (outside continuous trading and closing auction window).
+    - Misaligned intervals (seconds != 0 or minutes % 5 != 0).
+    - Invalid OHLC mathematical relationships (high < low, open or close outside high/low).
+    - Negative or impossible volume (< 0).
+    - Timezone consistency (Asia/Kolkata +05:30).
+    """
+    from app.services.trading_calendar_service import (
+        get_expected_session_schedule,
+        is_trading_day,
+    )
+
+    clean_sym = symbol.strip().split(".")[0].upper() if symbol else None
+    schedule = get_expected_session_schedule(clean_sym, session_date, interval=expected_interval)
+
+    if not schedule["is_trading_day"]:
+        return {
+            "is_complete": False,
+            "session_date": session_date,
+            "symbol": clean_sym,
+            "session_type": schedule["session_type"],
+            "is_cas_eligible": schedule["is_cas_eligible"],
+            "expected_bars": 0,
+            "expected_continuous_bars": 0,
+            "actual_bars": len(bars),
+            "actual_continuous_bars": 0,
+            "valid_bars_count": 0,
+            "missing_intervals": [],
+            "missing_interior_intervals": [],
+            "duplicate_intervals": [],
+            "has_closing_auction": False,
+            "auction_bars_count": 0,
+            "auction_timestamps": [],
+            "out_of_session_intervals": [],
+            "misaligned_intervals": [],
+            "ohlc_violations": [],
+            "volume_violations": [],
+            "errors": [f"EXCHANGE_CALENDAR_EXCLUSION: {schedule['status_reason']}"],
+            "status": f"EXCHANGE_CALENDAR_EXCLUSION: {schedule['status_reason']}",
+            "schedule": schedule,
+        }
+
+    expected_continuous_times = schedule["expected_continuous_timestamps"]
+    expected_continuous_bars = schedule["expected_continuous_bars"]
+    has_closing_auction = schedule["has_closing_auction"]
+    acceptable_auction_times = set(schedule["acceptable_auction_timestamps"])
+
+    seen_continuous_times: list[str] = []
+    seen_continuous_set: set[str] = set()
+    duplicate_continuous_times: list[str] = []
+
+    auction_bars: list[dict[str, Any]] = []
+    out_of_session_times: list[str] = []
+    misaligned_times: list[str] = []
+    date_mismatches: list[str] = []
+    ohlc_violations: list[dict[str, Any]] = []
+    volume_violations: list[dict[str, Any]] = []
+
+    for b in bars:
+        raw_ts = str(b.get("timestamp") or "")
+        # Parse timestamp to IST
+        d_ist, t_ist = None, None
+        try:
+            if "T" in raw_ts or raw_ts.endswith("Z"):
+                clean = raw_ts.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(clean)
+                if dt.tzinfo is not None:
+                    ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                else:
+                    ist_dt = dt + timedelta(hours=5, minutes=30)
+                d_ist = ist_dt.strftime("%Y-%m-%d")
+                t_ist = ist_dt.strftime("%H:%M:%S")
+            else:
+                parts = raw_ts.strip().split(" ")
+                if len(parts) >= 2:
+                    d_ist = parts[0]
+                    t_ist = parts[1][:8]
+        except Exception:
+            pass
+
+        if not d_ist or not t_ist:
+            date_mismatches.append(raw_ts)
+            continue
+
+        if d_ist != session_date:
+            date_mismatches.append(f"{raw_ts} (IST date {d_ist} != session {session_date})")
+
+        # Alignment check: seconds must be 00 and minute must be multiple of 5
+        t_parts = t_ist.split(":")
+        if len(t_parts) >= 2:
+            mins = int(t_parts[1])
+            secs = int(t_parts[2]) if len(t_parts) >= 3 else 0
+            if mins % 5 != 0 or secs != 0:
+                misaligned_times.append(t_ist)
+
+        # Categorize bar: Continuous vs Auction vs Out of Session
+        if t_ist in expected_continuous_times:
+            if t_ist in seen_continuous_set:
+                duplicate_continuous_times.append(t_ist)
+            seen_continuous_times.append(t_ist)
+            seen_continuous_set.add(t_ist)
+        elif has_closing_auction and t_ist in acceptable_auction_times:
+            auction_bars.append({
+                "time": t_ist,
+                "bar": b,
+            })
+        else:
+            out_of_session_times.append(t_ist)
+
+        # OHLC mathematical consistency check
+        o = float(b.get("open") or 0.0)
+        h = float(b.get("high") or 0.0)
+        l = float(b.get("low") or 0.0)
+        c = float(b.get("close") or 0.0)
+
+        if o <= 0 or h <= 0 or l <= 0 or c <= 0 or h < l or h < o or h < c or l > o or l > c:
+            ohlc_violations.append({
+                "time": t_ist,
+                "open": o, "high": h, "low": l, "close": c,
+                "reason": "Invalid OHLC bounds (high < low or open/close outside high/low range)",
+            })
+
+        # Volume validity check
+        v = b.get("volume")
+        if v is None or float(v) < 0:
+            volume_violations.append({
+                "time": t_ist,
+                "volume": v,
+                "reason": "Negative or missing volume",
+            })
+
+    # Continuous session completeness & gap analysis
+    missing_continuous = [t for t in expected_continuous_times if t not in seen_continuous_set]
+
+    # Differentiate interior gaps vs boundary omissions
+    missing_interior: list[str] = []
+    missing_boundary: list[str] = []
+    if seen_continuous_times:
+        min_seen = min(seen_continuous_times)
+        max_seen = max(seen_continuous_times)
+        for t in missing_continuous:
+            if min_seen < t < max_seen:
+                missing_interior.append(t)
+            else:
+                missing_boundary.append(t)
+    else:
+        missing_boundary = list(missing_continuous)
+
+    errors: list[str] = []
+    if missing_interior:
+        errors.append(f"MISSING_INTERIOR_INTERVALS ({len(missing_interior)} interior missing: {', '.join(missing_interior[:3])})")
+    if missing_continuous:
+        errors.append(f"MISSING_INTERVALS ({len(missing_continuous)} missing of {expected_continuous_bars})")
+    if duplicate_continuous_times:
+        errors.append(f"DUPLICATE_TIMESTAMPS ({len(duplicate_continuous_times)} duplicates)")
+    if out_of_session_times:
+        errors.append(f"OUT_OF_SESSION_TIMESTAMPS ({len(out_of_session_times)} intervals)")
+    if misaligned_times:
+        errors.append(f"MISALIGNED_INTERVALS ({len(misaligned_times)} intervals not 5m-aligned)")
+    if date_mismatches:
+        errors.append(f"DATE_OR_TIMEZONE_MISMATCH ({len(date_mismatches)} bars)")
+    if ohlc_violations:
+        errors.append(f"INVALID_OHLC_RELATIONSHIPS ({len(ohlc_violations)} bars)")
+    if volume_violations:
+        errors.append(f"NEGATIVE_OR_INVALID_VOLUME ({len(volume_violations)} bars)")
+
+    # Check continuous bar count
+    if len(seen_continuous_set) != expected_continuous_bars:
+        errors.append(f"UNEXPECTED_BAR_COUNT ({len(seen_continuous_set)} continuous actual vs {expected_continuous_bars} expected)")
+
+    is_complete = (
+        len(errors) == 0 and
+        len(seen_continuous_set) == expected_continuous_bars and
+        len(missing_continuous) == 0
+    )
+
+    if is_complete:
+        if has_closing_auction:
+            if auction_bars:
+                status = "SESSION_COMPLETE_AUCTION_INCLUDED"
+            else:
+                status = "SESSION_COMPLETE_CAS_NOT_INCLUDED"
+        else:
+            status = "SESSION_COMPLETE"
+    else:
+        if ohlc_violations or volume_violations:
+            status = "SESSION_INVALID"
+        elif missing_interior:
+            status = f"SESSION_INCOMPLETE_INTERIOR_GAP ({len(missing_interior)} bars)"
+        elif missing_boundary:
+            status = f"SESSION_INCOMPLETE_BOUNDARY_GAP ({len(missing_boundary)} bars)"
+        elif errors:
+            status = errors[0]
+        else:
+            status = "SESSION_INCOMPLETE"
+
+    return {
+        "is_complete": is_complete,
+        "session_date": session_date,
+        "symbol": clean_sym,
+        "session_type": schedule["session_type"],
+        "is_cas_eligible": schedule["is_cas_eligible"],
+        "expected_bars": expected_continuous_bars,
+        "expected_continuous_bars": expected_continuous_bars,
+        "actual_bars": len(bars),
+        "actual_continuous_bars": len(seen_continuous_set),
+        "valid_bars_count": len(seen_continuous_set),
+        "missing_intervals": missing_continuous,
+        "missing_interior_intervals": missing_interior,
+        "duplicate_intervals": duplicate_continuous_times,
+        "has_closing_auction": has_closing_auction,
+        "auction_bars_count": len(auction_bars),
+        "auction_timestamps": [b["time"] for b in auction_bars],
+        "out_of_session_intervals": out_of_session_times,
+        "misaligned_intervals": misaligned_times,
+        "ohlc_violations": ohlc_violations,
+        "volume_violations": volume_violations,
+        "errors": errors,
+        "status": status,
+        "schedule": schedule,
+    }
+
+
+def classify_session_provenance(
+    bars: list[dict[str, Any]],
+    strict_audit: bool = False,
+    check_db_audit: bool = False,
+    require_completeness: bool = False,
+    session_date: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> tuple[DataSourceClassification, str]:
+    """
+    Audits the provenance of all bars in a trading session.
+    If ANY bar is synthetic, the entire session is classified as SYNTHETIC.
+    If any bar has unknown origin, session is UNKNOWN.
+    If require_completeness=True, validates continuous session completeness.
+    """
+    if not bars:
+        return DataSourceClassification.UNKNOWN, "Empty bar list"
+
+    classifications = set()
+    for b in bars:
+        c, _, _ = verify_bar_provenance(
+            b,
+            strict_audit=strict_audit,
+            check_db_provenance=check_db_audit,
+            symbol=symbol or b.get("symbol"),
+        )
+        classifications.add(c)
+
+    if DataSourceClassification.SYNTHETIC in classifications:
+        return DataSourceClassification.SYNTHETIC, "Contains synthetic/calibrated bars"
+
+    if DataSourceClassification.UNKNOWN in classifications:
+        return DataSourceClassification.UNKNOWN, "Contains unverified/unknown source bars"
+
+    # Optional session completeness check for observed sessions
+    if require_completeness and session_date:
+        comp = validate_session_completeness(session_date, bars, symbol=symbol)
+        if not comp["is_complete"]:
+            return DataSourceClassification.UNKNOWN, f"INCOMPLETE_SESSION: {comp['status']}"
+
+    if len(classifications) == 1:
+        single = next(iter(classifications))
+        return single, f"Uniform {single.value} session"
+
+    # Mixed observed (e.g. historical + delayed)
+    return DataSourceClassification.OBSERVED_HISTORICAL, "Mixed observed bars"
+
+
 def check_ist_market_hours() -> tuple[bool, int, float, str]:
     """
     Check if NSE market is currently open in Asia/Kolkata timezone (UTC + 5:30).

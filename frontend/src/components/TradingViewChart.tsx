@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   createChart,
@@ -50,6 +51,7 @@ export default function TradingViewChart({
   const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const trendlineSeriesRefs = useRef<ISeriesApi<"Line">[]>([]);
 
   // Overlay price lines ref (Order Blocks, S/R, Key Levels)
   const overlayPriceLinesRef = useRef<any[]>([]);
@@ -77,6 +79,8 @@ export default function TradingViewChart({
   const [showFVG, setShowFVG] = useState(false);
   const [showSR, setShowSR] = useState(true);
   const [showKeyLevels, setShowKeyLevels] = useState(false);
+  const [showStructure, setShowStructure] = useState(false);
+  const [showTrendlines, setShowTrendlines] = useState(false);
   const [showVolProfileSidebar, setShowVolProfileSidebar] = useState(false);
   const [showSetupsDrawer, setShowSetupsDrawer] = useState(false);
 
@@ -95,8 +99,7 @@ export default function TradingViewChart({
 
     const loadData = async () => {
       try {
-        const res = await fetch(
-          `http://127.0.0.1:8000/api/scanner/stock/${symbol}/analysis?timeframe=${timeframe}`
+        const res = await apiFetch(`/api/scanner/stock/${symbol}/analysis?timeframe=${timeframe}`
         );
         if (!res.ok) {
           throw new Error(`Failed to load analysis for ${symbol}: HTTP ${res.status}`);
@@ -252,6 +255,16 @@ export default function TradingViewChart({
       priceLineVisible: false,
       title: "VWAP",
     });
+    trendlineSeriesRefs.current = ["#38bdf8", "#c084fc", "#4ade80", "#f59e0b"].map((color, index) =>
+      chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        lineStyle: LineStyle.LargeDashed,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: `Trendline ${index + 1}`,
+      })
+    );
 
     // Crosshair listener
     chart.subscribeCrosshairMove((param) => {
@@ -289,6 +302,7 @@ export default function TradingViewChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
       chartRef.current = null;
+      trendlineSeriesRefs.current = [];
     };
   }, [height, isFullscreen]);
 
@@ -365,6 +379,21 @@ export default function TradingViewChart({
         }
       }
 
+      const trendlines = analysisData?.levels?.trendlines || [];
+      trendlineSeriesRefs.current.forEach((series, index) => {
+        const trendline = showTrendlines ? trendlines.filter((line: any) => line.is_active)[index] : null;
+        const startDate = trendline?.start_point?.date?.split("T")[0];
+        const endDate = trendline?.end_point?.date?.split("T")[0];
+        if (trendline && startDate && endDate) {
+          series.setData([
+            { time: startDate as Time, value: trendline.start_point.price },
+            { time: endDate as Time, value: trendline.end_point.price },
+          ]);
+        } else {
+          series.setData([]);
+        }
+      });
+
       // VWAP
       if (vwapSeriesRef.current) {
         vwapSeriesRef.current.setData(showVWAP ? buildLineData(ts.vwap) : []);
@@ -385,6 +414,7 @@ export default function TradingViewChart({
     showSMA20,
     showBB,
     showVWAP,
+    showTrendlines,
   ]);
 
   // Draw Price Lines for SMC (Order Blocks, FVGs) and Levels (Support/Resistance, Key Levels)
@@ -467,6 +497,22 @@ export default function TradingViewChart({
       }
     }
 
+    if (showStructure) {
+      const recentBreaks = (analysisData.smc?.market_structure?.breaks || []).slice(-2);
+      for (const structureBreak of recentBreaks) {
+        newLines.push(
+          candleSeriesRef.current.createPriceLine({
+            price: structureBreak.broken_level,
+            color: structureBreak.type === "BOS" ? "#38bdf8" : "#f59e0b",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `${structureBreak.direction} ${structureBreak.type}`,
+          })
+        );
+      }
+    }
+
     // 4. Session Key Levels (PDH, PDL, PWH, PWL)
     if (showKeyLevels && analysisData.levels?.key_levels) {
       const kl = analysisData.levels.key_levels;
@@ -521,7 +567,7 @@ export default function TradingViewChart({
     }
 
     overlayPriceLinesRef.current = newLines;
-  }, [analysisData, showOB, showFVG, showSR, showKeyLevels]);
+  }, [analysisData, showOB, showFVG, showSR, showKeyLevels, showStructure]);
 
   const activeCandle = hoveredCandle || (bars.length > 0 ? bars[bars.length - 1] : null);
   const priceChange = activeCandle && activeCandle.open ? activeCandle.close - activeCandle.open : 0;
@@ -707,6 +753,34 @@ export default function TradingViewChart({
         {/* Right: Indicator & Overlay Toggles */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
           <button
+            onClick={() => setShowVolume(!showVolume)}
+            style={{
+              background: showVolume ? "rgba(45, 201, 147, 0.13)" : "#16202e",
+              color: showVolume ? "#45d7a1" : "#8c9bb0",
+              border: "1px solid #28394e",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+            }}
+          >
+            Volume
+          </button>
+          <button
+            onClick={() => setShowEMA9(!showEMA9)}
+            style={{
+              background: showEMA9 ? "rgba(6, 182, 212, 0.15)" : "#16202e",
+              color: showEMA9 ? "#06b6d4" : "#8c9bb0",
+              border: "1px solid #28394e",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+            }}
+          >
+            EMA 9
+          </button>
+          <button
             onClick={() => setShowEMA20(!showEMA20)}
             style={{
               background: showEMA20 ? "rgba(245, 158, 11, 0.15)" : "#16202e",
@@ -735,6 +809,63 @@ export default function TradingViewChart({
             }}
           >
             EMA 50
+          </button>
+          <button
+            onClick={() => setShowEMA200(!showEMA200)}
+            style={{
+              background: showEMA200 ? "rgba(168, 85, 247, 0.15)" : "#16202e",
+              color: showEMA200 ? "#c084fc" : "#8c9bb0",
+              border: "1px solid #28394e",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+            }}
+          >
+            EMA 200
+          </button>
+          <button
+            onClick={() => setShowFVG(!showFVG)}
+            style={{
+              background: showFVG ? "rgba(56, 189, 248, 0.15)" : "#16202e",
+              color: showFVG ? "#38bdf8" : "#8c9bb0",
+              border: "1px solid #28394e",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+            }}
+          >
+            FVG
+          </button>
+          <button
+            onClick={() => setShowStructure(!showStructure)}
+            style={{
+              background: showStructure ? "rgba(245, 158, 11, 0.15)" : "#16202e",
+              color: showStructure ? "#f59e0b" : "#8c9bb0",
+              border: "1px solid #28394e",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+            }}
+            title="Toggle recent BOS and CHoCH structure levels"
+          >
+            BOS / CHoCH
+          </button>
+          <button
+            onClick={() => setShowTrendlines(!showTrendlines)}
+            style={{
+              background: showTrendlines ? "rgba(56, 189, 248, 0.15)" : "#16202e",
+              color: showTrendlines ? "#38bdf8" : "#8c9bb0",
+              border: "1px solid #28394e",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 600,
+            }}
+          >
+            Trendlines
           </button>
           <button
             onClick={() => setShowBB(!showBB)}

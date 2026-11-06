@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useEffect, useState, useMemo } from "react";
 
 interface SetupRecord {
@@ -37,7 +38,7 @@ export default function SetupBoardView({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/scanner/market?force_refresh=false");
+      const res = await apiFetch("/api/scanner/market?force_refresh=false");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 

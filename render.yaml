@@ -1,0 +1,30 @@
+# Render Infrastructure as Code Blueprint
+# Stock Intelligence Pro — Phase 13 Zero-Cost Cloud Deployment
+# Free tier Web Service specification
+
+services:
+  - type: web
+    name: stock-intelligence-api
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: PORT
+        value: 8000
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: DHAN_LIVE_DATA_ENABLED
+        value: "false"

@@ -47,11 +47,11 @@ from app.services.smc_service import analyze_smart_money_concepts
 logger = logging.getLogger(__name__)
 
 
-def get_enriched_watchlist(watchlist_id: int) -> Optional[dict[str, Any]]:
+def get_enriched_watchlist(watchlist_id: int, user_id: Optional[str] = None) -> Optional[dict[str, Any]]:
     """
     Retrieve a watchlist by ID and enrich all symbols with current market data.
     """
-    wl = get_custom_watchlist(watchlist_id)
+    wl = get_custom_watchlist(watchlist_id, user_id=user_id)
     if not wl:
         return None
 

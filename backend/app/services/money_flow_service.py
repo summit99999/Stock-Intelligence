@@ -44,7 +44,7 @@ Calculates:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import math
 import time
@@ -54,6 +54,17 @@ import pandas as pd
 
 from app.database import get_bars, get_stock, list_stocks
 from app.services.market_intelligence_service import NIFTY_50_CORE
+from app.services.data_quality_service import (
+    DataSourceClassification,
+    classify_data_source,
+    classify_session_provenance,
+)
+from app.services.trading_calendar_service import (
+    is_trading_holiday,
+    is_special_trading_session,
+    is_cas_eligible_security,
+    MIN_REGULAR_SESSION_BARS_5M,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,25 +101,63 @@ def _get_ist_session_fraction() -> tuple[float, str, bool]:
         return 1.0, label, False
 
 
+def _parse_timestamp_to_ist(ts_str: Any) -> tuple[Optional[str], Optional[str]]:
+    """
+    Parses timestamp string and converts UTC to IST (Asia/Kolkata, UTC+05:30).
+    Returns (ist_date_str "YYYY-MM-DD", ist_time_str "HH:MM:SS").
+    If timestamp is naive or without timezone, assumes already IST.
+    """
+    if not ts_str:
+        return None, None
+    clean_ts = str(ts_str).strip()
+    if clean_ts.endswith("Z") or "+00:00" in clean_ts:
+        try:
+            iso_clean = clean_ts.replace("Z", "+00:00")
+            dt_utc = datetime.fromisoformat(iso_clean)
+            dt_ist = dt_utc + timedelta(hours=5, minutes=30)
+            return dt_ist.strftime("%Y-%m-%d"), dt_ist.strftime("%H:%M:%S")
+        except Exception:
+            pass
+    elif "+05:30" in clean_ts:
+        try:
+            dt_ist = datetime.fromisoformat(clean_ts)
+            return dt_ist.strftime("%Y-%m-%d"), dt_ist.strftime("%H:%M:%S")
+        except Exception:
+            pass
+
+    if "T" in clean_ts:
+        parts = clean_ts.split("T", 1)
+        return parts[0], parts[1].split("+")[0].split("Z")[0].strip()[:8]
+    elif " " in clean_ts:
+        parts = clean_ts.split(" ", 1)
+        return parts[0], parts[1].split("+")[0].split("Z")[0].strip()[:8]
+    return None, None
+
+
 def calculate_historical_time_of_day_rvol(
     symbol: str,
     today_cumulative_volume: float,
     current_time_str: Optional[str] = None,
     lookback_sessions: int = 20,
     min_required_sessions: int = 3,
+    min_bars_per_session: int = 0,
     intraday_history_bars: Optional[list[dict[str, Any]]] = None,
     today_date: Optional[str] = None,
+    allow_synthetic: bool = False,
 ) -> dict[str, Any]:
     """
-    Method A: Historical Time-of-Day RVOL.
+    Method A: True Historical Time-of-Day RVOL (Phase 14.3 Strict Market Data Verification).
     - Calculates cumulative volume up to current_time_str for each of the previous
       lookback_sessions valid trading sessions.
-    - Calculates their average cumulative volume at that exact same time of day.
+    - STRICT PROVENANCE ISOLATION:
+      * Only genuine observed historical sessions are used when allow_synthetic=False (production mode).
+      * Synthetic/calibrated bars are strictly excluded unless allow_synthetic=True is explicitly set.
+      * Baselines NEVER mix observed and synthetic sessions.
+      * Truncated sessions (< min_bars_per_session), NSE official holidays, and special Muhurat sessions are excluded.
     - Divides today's cumulative volume by that historical time-of-day average.
-    - Handles missing sessions, incomplete intraday data, and early-session/midday/closing patterns.
+    - Returns standardized status, source classification, and data quality fields.
     """
     if intraday_history_bars is None:
-        # Check database for intraday bars
         bars = (
             get_bars(symbol, interval="5m")
             or get_bars(symbol, interval="15m")
@@ -119,24 +168,10 @@ def calculate_historical_time_of_day_rvol(
     else:
         bars = intraday_history_bars
 
-    if not bars:
-        return {
-            "rvol": None,
-            "method": "HISTORICAL_TIME_OF_DAY",
-            "status": "UNAVAILABLE",
-            "reason": "Missing intraday bar history in database",
-            "sessions_evaluated": 0,
-            "target_time": current_time_str,
-        }
-
     # Normalize target time string
     if not current_time_str:
-        utc_now = datetime.now(timezone.utc)
-        ist_total_minutes = (utc_now.hour * 60 + utc_now.minute) + 330
-        ist_day_minutes = ist_total_minutes % 1440
-        h = ist_day_minutes // 60
-        m = ist_day_minutes % 60
-        target_time = f"{h:02d}:{m:02d}:00"
+        from app.services.intraday_data_service import get_latest_completed_5m_interval
+        _, target_time, _ = get_latest_completed_5m_interval()
     else:
         parts = current_time_str.split(":")
         if len(parts) == 2:
@@ -144,80 +179,199 @@ def calculate_historical_time_of_day_rvol(
         else:
             target_time = current_time_str
 
-    # Group bars by date
+    if not bars:
+        return {
+            "rvol": None,
+            "time_of_day_rvol": None,
+            "method": "HISTORICAL_TIME_OF_DAY",
+            "status": "UNAVAILABLE",
+            "tod_rvol_status": "UNAVAILABLE",
+            "tod_source": "UNAVAILABLE",
+            "tod_data_quality": "INSUFFICIENT_OBSERVED_DATA",
+            "reason": "Missing intraday bar history in database",
+            "tod_valid_sessions": 0,
+            "sessions_evaluated": 0,
+            "target_time": target_time,
+            "historical_avg_volume": None,
+            "label": f"UNAVAILABLE (No intraday history at {target_time[:5]} IST)",
+        }
+
+    # Group bars by date, retaining full bar records for provenance audit
     sessions: dict[str, list[dict[str, Any]]] = {}
     for b in bars:
-        ts = str(b.get("timestamp", ""))
-        if "T" in ts:
-            dt_part, tm_part = ts.split("T", 1)
-        elif " " in ts:
-            dt_part, tm_part = ts.split(" ", 1)
-        else:
+        dt_part, tm_part = _parse_timestamp_to_ist(b.get("timestamp", ""))
+        if not dt_part or not tm_part:
             continue
-        sessions.setdefault(dt_part, []).append({
-            "time": tm_part,
-            "volume": float(b.get("volume") or 0.0),
-        })
+        bar_item = dict(b)
+        bar_item["time"] = tm_part
+        bar_item["volume"] = float(b.get("volume") or 0.0)
+        # If in-memory bars are explicitly provided by caller without source attribute,
+        # default to observed historical in-memory test input
+        if intraday_history_bars is not None and not bar_item.get("source"):
+            bar_item["source"] = "yfinance_historical_5m"
+        sessions.setdefault(dt_part, []).append(bar_item)
 
     sorted_dates = sorted(sessions.keys())
     if not sorted_dates:
         return {
             "rvol": None,
+            "time_of_day_rvol": None,
             "method": "HISTORICAL_TIME_OF_DAY",
             "status": "UNAVAILABLE",
+            "tod_rvol_status": "UNAVAILABLE",
+            "tod_source": "UNAVAILABLE",
+            "tod_data_quality": "INSUFFICIENT_OBSERVED_DATA",
             "reason": "No valid timestamped intraday sessions found",
+            "tod_valid_sessions": 0,
             "sessions_evaluated": 0,
             "target_time": target_time,
+            "historical_avg_volume": None,
+            "label": f"UNAVAILABLE (0 sessions at {target_time[:5]} IST)",
         }
 
-    # Identify and exclude today's session if present in the data
-    utc_today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    effective_today = today_date or utc_today
+    # Identify and exclude today's ongoing session if present in the data
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    ist_today = ist_now.strftime("%Y-%m-%d")
+    effective_today = today_date or ist_today
     if effective_today in sessions:
         historical_dates = [d for d in sorted_dates if d != effective_today]
     else:
         historical_dates = sorted_dates
 
-    session_cum_volumes: list[float] = []
+    # Audit and separate sessions strictly by provenance, holiday, and completeness
+    observed_sessions_cum: list[float] = []
+    synthetic_sessions_cum: list[float] = []
+
     for d in historical_dates:
         s_bars = sessions[d]
-        bars_up_to_t = [b for b in s_bars if b["time"] <= target_time]
-        if bars_up_to_t:
-            cum_v = sum(b["volume"] for b in bars_up_to_t)
-            session_cum_volumes.append(cum_v)
 
-    if len(session_cum_volumes) < min_required_sessions:
+        # 1. Holiday filter (official NSE equity holiday)
+        is_hol, _ = is_trading_holiday(d)
+        if is_hol:
+            continue
+
+        # 2. Special session filter (e.g. Diwali Muhurat or DR drills)
+        is_spec, _, _ = is_special_trading_session(d)
+        if is_spec:
+            continue
+
+        # 3. Completeness filter (exclude truncated sessions with fewer than min_bars_per_session)
+        effective_min_bars = min_bars_per_session if min_bars_per_session > 0 else (60 if intraday_history_bars is None else 0)
+        if effective_min_bars > 0 and len(s_bars) < effective_min_bars:
+            continue
+
+        # 4. Strict session-level provenance classification and completeness verification
+        is_db_read = intraday_history_bars is None
+        session_class, _ = classify_session_provenance(
+            s_bars,
+            strict_audit=is_db_read,
+            check_db_audit=is_db_read,
+            require_completeness=is_db_read,
+            session_date=d,
+            symbol=symbol,
+        )
+
+        # 5. Extract continuous cumulative volume up to target_time
+        # Under CAS, continuous bars are only up to 15:10:00 (bar start time).
+        # Auction bars (15:15, 15:25) represent post-continuous closing auction.
+        is_cas, _ = is_cas_eligible_security(symbol, d)
+        if is_cas:
+            continuous_bars = [b for b in s_bars if b["time"] <= "15:10:00"]
+        else:
+            continuous_bars = [b for b in s_bars if b["time"] <= "15:25:00"]
+
+        bars_up_to_t = [b for b in continuous_bars if b["time"] <= target_time]
+        if not bars_up_to_t:
+            continue
+
+        cum_v = sum(b["volume"] for b in bars_up_to_t)
+
+        if session_class in (
+            DataSourceClassification.OBSERVED_HISTORICAL,
+            DataSourceClassification.OBSERVED_DELAYED,
+            DataSourceClassification.OBSERVED_LIVE,
+        ):
+            observed_sessions_cum.append(cum_v)
+        elif session_class == DataSourceClassification.SYNTHETIC:
+            synthetic_sessions_cum.append(cum_v)
+        # UNKNOWN provenance sessions are discarded entirely
+
+    # Select baseline strictly maintaining purity (NEVER mix synthetic + observed)
+    if len(observed_sessions_cum) >= min_required_sessions:
+        selected_cum_volumes = observed_sessions_cum[-lookback_sessions:]
+        active_source = DataSourceClassification.OBSERVED_HISTORICAL.value
+        active_status = "OBSERVED_HISTORICAL"
+        active_quality = "VERIFIED_OBSERVED_INTRADAY"
+        is_synthetic_baseline = False
+    elif allow_synthetic and len(synthetic_sessions_cum) >= min_required_sessions:
+        # Permitted ONLY for offline development, tests, or explicit user demonstration
+        selected_cum_volumes = synthetic_sessions_cum[-lookback_sessions:]
+        active_source = DataSourceClassification.SYNTHETIC.value
+        active_status = "SYNTHETIC"
+        active_quality = "SYNTHETIC_SIMULATION"
+        is_synthetic_baseline = True
+    else:
+        # Insufficient genuine observed sessions
+        insufficient_reason = (
+            f"Insufficient prior intraday sessions before {target_time} "
+            f"({len(observed_sessions_cum)} observed found, min {min_required_sessions} required). "
+            f"{len(synthetic_sessions_cum)} synthetic calibrated sessions isolated."
+        )
         return {
             "rvol": None,
+            "time_of_day_rvol": None,
             "method": "HISTORICAL_TIME_OF_DAY",
             "status": "UNAVAILABLE",
-            "reason": f"Insufficient prior intraday sessions before {target_time} ({len(session_cum_volumes)} found, min {min_required_sessions} required)",
-            "sessions_evaluated": len(session_cum_volumes),
+            "tod_rvol_status": "UNAVAILABLE",
+            "tod_source": "UNAVAILABLE",
+            "tod_data_quality": "INSUFFICIENT_OBSERVED_DATA",
+            "reason": insufficient_reason,
+            "tod_valid_sessions": len(observed_sessions_cum),
+            "sessions_evaluated": len(observed_sessions_cum),
             "target_time": target_time,
+            "historical_avg_volume": None,
+            "label": f"UNAVAILABLE ({len(observed_sessions_cum)} of {min_required_sessions} required sessions)",
         }
 
-    recent_cum_volumes = session_cum_volumes[-lookback_sessions:]
-    avg_hist_cum_vol = float(np.mean(recent_cum_volumes))
-
+    avg_hist_cum_vol = float(np.mean(selected_cum_volumes))
     if avg_hist_cum_vol <= 0:
         return {
             "rvol": None,
+            "time_of_day_rvol": None,
             "method": "HISTORICAL_TIME_OF_DAY",
             "status": "UNAVAILABLE",
-            "reason": "Historical average cumulative volume is zero",
-            "sessions_evaluated": len(recent_cum_volumes),
+            "tod_rvol_status": "UNAVAILABLE",
+            "tod_source": active_source,
+            "tod_data_quality": "ZERO_HISTORICAL_VOLUME",
+            "reason": f"Historical average cumulative volume is zero ({avg_hist_cum_vol}) at {target_time}",
+            "tod_valid_sessions": len(selected_cum_volumes),
+            "sessions_evaluated": len(selected_cum_volumes),
             "target_time": target_time,
+            "historical_avg_volume": 0.0,
+            "label": f"UNAVAILABLE (Zero volume baseline at {target_time[:5]} IST)",
         }
 
     tod_rvol = round(today_cumulative_volume / avg_hist_cum_vol, 2)
+    session_count = len(selected_cum_volumes)
+
+    if is_synthetic_baseline:
+        label_text = f"DEMONSTRATION: Synthetic Calibrated TOD ({session_count} sessions avg at {target_time[:5]} IST)"
+    else:
+        label_text = f"Historical Time-of-Day ({session_count} sessions avg at {target_time[:5]} IST)"
+
     return {
         "rvol": tod_rvol,
+        "time_of_day_rvol": tod_rvol,
         "method": "HISTORICAL_TIME_OF_DAY",
         "status": "HISTORICAL_TIME_OF_DAY",
+        "tod_rvol_status": active_status,
+        "tod_source": active_source,
+        "tod_data_quality": active_quality,
         "historical_avg_volume": round(avg_hist_cum_vol, 1),
-        "sessions_evaluated": len(recent_cum_volumes),
+        "tod_valid_sessions": session_count,
+        "sessions_evaluated": session_count,
         "target_time": target_time,
-        "label": f"Historical Time-of-Day ({len(recent_cum_volumes)} sessions avg at {target_time[:5]} IST)",
+        "label": label_text,
     }
 
 
@@ -251,6 +405,7 @@ def calculate_stock_volume_intelligence(
     rvol_time_label: str = "Full Session (EOD Historical)",
     current_time_ist: Optional[str] = None,
     intraday_history_bars: Optional[list[dict[str, Any]]] = None,
+    allow_synthetic: bool = False,
 ) -> dict[str, Any]:
     """
     Compute daily volume, moving averages (10D, 20D, 50D), dual-method intraday RVOL,
@@ -317,18 +472,22 @@ def calculate_stock_volume_intelligence(
             today_volume,
             current_time_str=current_time_ist,
             intraday_history_bars=intraday_history_bars,
+            allow_synthetic=allow_synthetic,
         )
         linear_res = calculate_linear_estimated_intraday_rvol(today_volume, adv_20, session_fraction)
 
         if tod_res["rvol"] is not None:
             intraday_rvol = tod_res["rvol"]
             intraday_rvol_method = "HISTORICAL_TIME_OF_DAY"
-            intraday_rvol_status = "HISTORICAL_TIME_OF_DAY"
+            intraday_rvol_status = tod_res["tod_rvol_status"]
             active_time_label = tod_res["label"]
             historical_time_of_day_rvol = tod_res["rvol"]
+            tod_valid_sessions = tod_res["tod_valid_sessions"]
+            tod_source = tod_res["tod_source"]
+            tod_data_quality = tod_res["tod_data_quality"]
             intraday_rvol_explanation = (
                 f"Calculated against historical average cumulative volume at {tod_res['target_time']} IST "
-                f"across {tod_res['sessions_evaluated']} trading sessions."
+                f"across {tod_res['sessions_evaluated']} trading sessions ({tod_source})."
             )
         else:
             intraday_rvol = linear_res["rvol"]
@@ -336,9 +495,12 @@ def calculate_stock_volume_intelligence(
             intraday_rvol_status = "ESTIMATED"
             active_time_label = rvol_time_label if rvol_time_label != "Full Session (EOD Historical)" else linear_res["label"]
             historical_time_of_day_rvol = None
+            tod_valid_sessions = tod_res.get("tod_valid_sessions", 0)
+            tod_source = tod_res.get("tod_source", "UNAVAILABLE")
+            tod_data_quality = tod_res.get("tod_data_quality", "INSUFFICIENT_OBSERVED_DATA")
             intraday_rvol_explanation = (
-                "ESTIMATED fallback assuming uniform volume distribution (ADV20 × Session Fraction). "
-                "Historical minute bars unavailable."
+                f"ESTIMATED fallback assuming uniform volume distribution (ADV20 × Session Fraction). "
+                f"True Time-of-Day RVOL is UNAVAILABLE: {tod_res.get('reason', 'Insufficient observed intraday data')}."
             )
 
         # 4. Money Flow Multiplier (MFM) & Close-Location Price Bias
@@ -405,6 +567,9 @@ def calculate_stock_volume_intelligence(
         intraday_rvol_status = "ESTIMATED"
         active_time_label = linear_res["label"]
         historical_time_of_day_rvol = None
+        tod_valid_sessions = 0
+        tod_source = "UNAVAILABLE"
+        tod_data_quality = "INSUFFICIENT_OBSERVED_DATA"
         intraday_rvol_explanation = "ESTIMATED fallback from stock record snapshot (ADV20 × Session Fraction)."
 
         if daily_change > 0:
@@ -494,6 +659,11 @@ def calculate_stock_volume_intelligence(
         "intraday_rvol_method": intraday_rvol_method,
         "intraday_rvol_status": intraday_rvol_status,
         "historical_time_of_day_rvol": historical_time_of_day_rvol,
+        "time_of_day_rvol": historical_time_of_day_rvol,
+        "tod_valid_sessions": tod_valid_sessions,
+        "tod_source": tod_source,
+        "tod_data_quality": tod_data_quality,
+        "tod_rvol_status": intraday_rvol_status,
         "linear_estimated_intraday_rvol": linear_res["rvol"],
         "intraday_rvol_explanation": intraday_rvol_explanation,
         "rvol_time_label": active_time_label,

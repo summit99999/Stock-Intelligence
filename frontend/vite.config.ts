@@ -12,6 +12,7 @@ export default defineConfig({
         manualChunks: {
           charts: ["lightweight-charts"],
           vendor: ["react", "react-dom"],
+          supabase: ["@supabase/supabase-js"],
         },
       },
     },

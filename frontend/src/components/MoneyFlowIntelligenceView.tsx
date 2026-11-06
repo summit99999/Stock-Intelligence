@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect, useMemo } from "react";
 import { LiveQuote } from "../api/marketFeed";
 
@@ -171,8 +172,7 @@ export default function MoneyFlowIntelligenceView({
     try {
       const minVal = parseFloat(minTradedValueCr) || 0;
       const minVol = (parseFloat(minVolumeK) || 0) * 1000;
-      const res = await fetch(
-        `http://127.0.0.1:8000/api/money-flow/overview?universe=${universe}&force_refresh=${force}&min_traded_value_cr=${minVal}&min_volume=${minVol}`
+      const res = await apiFetch(`/api/money-flow/overview?universe=${universe}&force_refresh=${force}&min_traded_value_cr=${minVal}&min_volume=${minVol}`
       );
       if (!res.ok) {
         throw new Error(`Failed to load money flow dashboard: HTTP ${res.status}`);
@@ -197,7 +197,7 @@ export default function MoneyFlowIntelligenceView({
   const fetchStockDetail = async (symbol: string) => {
     setStockDetailLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/money-flow/stock/${symbol}`);
+      const res = await apiFetch(`/api/money-flow/stock/${symbol}`);
       if (res.ok) {
         const json = await res.json();
         setSelectedStockDetail(json.analysis);
@@ -238,6 +238,11 @@ export default function MoneyFlowIntelligenceView({
 
   return (
     <div style={{ padding: "20px 24px", color: "#e2e8f0", display: "flex", flexDirection: "column", gap: "24px" }}>
+      {error && (
+        <div className="notice" role="status">
+          Money flow data unavailable: {error} No sample market values are being shown.
+        </div>
+      )}
       {/* Header & Controls */}
       <div
         style={{
@@ -344,9 +349,9 @@ export default function MoneyFlowIntelligenceView({
             "Volume represents total two-sided executed turnover. Candle close-location bias is an OHLCV-derived estimate, not actual buyer/seller order tape. Institutional daily flow is UNAVAILABLE without exchange-sourced settlement reports."}
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <span>Updated: {data?.timestamp}</span>
+          <span>Updated: {data?.timestamp || "Unavailable"}</span>
           <span>|</span>
-          <span>Coverage: {data?.market_overview?.coverage_pct}%</span>
+          <span>Coverage: {data ? `${data.market_overview.coverage_pct}%` : "Unavailable"}</span>
         </div>
       </div>
 

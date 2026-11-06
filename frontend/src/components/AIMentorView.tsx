@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect } from "react";
 
 interface AIMentorViewProps {
@@ -31,8 +32,8 @@ export default function AIMentorView({
     setLoading(true);
 
     Promise.all([
-      fetch(`http://127.0.0.1:8000/api/stocks/${selectedSymbol}`).then((r) => (r.ok ? r.json() : null)),
-      fetch(`http://127.0.0.1:8000/api/fundamentals/company/${selectedSymbol}/research`).then((r) => (r.ok ? r.json() : null)),
+      apiFetch(`/api/stocks/${selectedSymbol}`).then((r) => (r.ok ? r.json() : null)),
+      apiFetch(`/api/fundamentals/company/${selectedSymbol}/research`).then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([stockRes, dossierRes]) => {
         if (!cancelled) {

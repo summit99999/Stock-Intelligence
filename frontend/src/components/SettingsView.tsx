@@ -1,3 +1,5 @@
+import { apiFetch } from "../api/client";
+import { getApiBaseUrl } from "../api/config";
 import React, { useState, useEffect } from "react";
 import { fetchLiveFeedStatus, reconnectLiveFeed, LiveFeedStatus } from "../api/marketFeed";
 
@@ -42,7 +44,7 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
     }
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/dhan/status");
+      const res = await apiFetch("/api/dhan/status");
       if (res.ok) {
         const data = await res.json();
         setDhanStatus(data);
@@ -278,7 +280,7 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", fontSize: "12px" }}>
           <div style={{ background: "#0d1117", padding: "12px", borderRadius: "6px", border: "1px solid #1e293b" }}>
             <div style={{ color: "#9ca3af", fontSize: "11px" }}>BACKEND HOST & REST API</div>
-            <div style={{ color: "#38bdf8", fontWeight: "600", marginTop: "4px" }}>http://127.0.0.1:8000</div>
+            <div style={{ color: "#38bdf8", fontWeight: "600", marginTop: "4px" }}>{getApiBaseUrl()}</div>
             <div style={{ color: "#64748b", fontSize: "10px", marginTop: "2px" }}>FastAPI 0.115 + Python 3.12</div>
           </div>
 

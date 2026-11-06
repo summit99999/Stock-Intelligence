@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect, useMemo } from "react";
 
 interface Metadata {
@@ -234,10 +235,9 @@ export default function UnifiedResearchDashboardView({
     setError(null);
     try {
       const [regimeRes, sectorsRes, discRes] = await Promise.all([
-        fetch(`http://127.0.0.1:8000/api/research/regime?universe=${universe}`),
-        fetch(`http://127.0.0.1:8000/api/research/sectors?universe=${universe}`),
-        fetch(
-          `http://127.0.0.1:8000/api/research/discovery?universe=${universe}&direction=${directionFilter === "ALL" ? "" : directionFilter}&min_score=${minScore}&sector=${sectorFilter === "ALL" ? "" : sectorFilter}&page_size=50`
+        apiFetch(`/api/research/regime?universe=${universe}`),
+        apiFetch(`/api/research/sectors?universe=${universe}`),
+        apiFetch(`/api/research/discovery?universe=${universe}&direction=${directionFilter === "ALL" ? "" : directionFilter}&min_score=${minScore}&sector=${sectorFilter === "ALL" ? "" : sectorFilter}&page_size=50`
         ),
       ]);
 
@@ -262,7 +262,7 @@ export default function UnifiedResearchDashboardView({
   // Load Saved Plans
   const fetchSavedPlans = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/research/trade-plans");
+      const res = await apiFetch("/api/research/trade-plans");
       if (res.ok) setSavedPlans(await res.json());
     } catch (e) {
       console.error("Error loading trade plans:", e);
@@ -272,7 +272,7 @@ export default function UnifiedResearchDashboardView({
   // Load Notes
   const fetchSavedNotes = async (sym?: string) => {
     try {
-      const url = sym ? `http://127.0.0.1:8000/api/research/notes/${sym}` : `http://127.0.0.1:8000/api/research/notes/RELIANCE`;
+      const url = sym ? `/api/research/notes/${sym}` : `/api/research/notes/RELIANCE`;
       const res = await fetch(url);
       if (res.ok) setSavedNotes(await res.json());
     } catch (e) {
@@ -294,7 +294,7 @@ export default function UnifiedResearchDashboardView({
     setPlanLoading(true);
     setPlanSaveMsg(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/research/trade-plan", {
+      const res = await apiFetch("/api/research/trade-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -338,7 +338,7 @@ export default function UnifiedResearchDashboardView({
         evidence: JSON.stringify(generatedPlan.evidence_list),
         notes: `Hypothetical trade plan generated for ${generatedPlan.symbol}`,
       };
-      const res = await fetch("http://127.0.0.1:8000/api/research/trade-plans/save", {
+      const res = await apiFetch("/api/research/trade-plans/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -354,7 +354,7 @@ export default function UnifiedResearchDashboardView({
 
   const handleDeleteSavedPlan = async (id: number) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/research/trade-plans/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/research/trade-plans/${id}`, { method: "DELETE" });
       if (res.ok) fetchSavedPlans();
     } catch (e) {
       console.error(e);
@@ -363,7 +363,7 @@ export default function UnifiedResearchDashboardView({
 
   const handleUpdatePlanStatus = async (id: number, newStatus: string) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/research/trade-plans/${id}`, {
+      const res = await apiFetch(`/api/research/trade-plans/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -377,7 +377,7 @@ export default function UnifiedResearchDashboardView({
   const handleValidateSetup = async () => {
     setValLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/research/validate", {
+      const res = await apiFetch("/api/research/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -400,7 +400,7 @@ export default function UnifiedResearchDashboardView({
     setModalSymbol(symbol);
     setDossierLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/research/stock/${symbol}`);
+      const res = await apiFetch(`/api/research/stock/${symbol}`);
       if (res.ok) setDossierData(await res.json());
     } catch (e) {
       console.error(e);
@@ -413,7 +413,7 @@ export default function UnifiedResearchDashboardView({
     if (!newNoteText.trim()) return;
     try {
       const sym = modalSymbol || planSymbol;
-      const res = await fetch("http://127.0.0.1:8000/api/research/notes", {
+      const res = await apiFetch("/api/research/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

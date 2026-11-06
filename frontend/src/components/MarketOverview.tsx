@@ -1,5 +1,7 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect, useMemo } from "react";
 import { LiveQuote } from "../api/marketFeed";
+import MarketMoversConfluenceView from "./MarketMoversConfluenceView";
 
 interface IndexSummary {
   name: string;
@@ -111,28 +113,31 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
   const [loading, setLoading] = useState<boolean>(true);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [sectors, setSectors] = useState<SectorItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [sectorFilter, setSectorFilter] = useState<string>("ALL");
   const [quadrantFilter, setQuadrantFilter] = useState<string>("ALL");
-  const [activeTab, setActiveTab] = useState<"gainers" | "losers" | "volume" | "highs52">("gainers");
+  const [moversViewTab, setMoversViewTab] = useState<"confluence" | "52w">("confluence");
+  const [extremesTab, setExtremesTab] = useState<"near_highs" | "new_highs" | "near_lows" | "new_lows">("near_highs");
 
   const fetchData = async (force: boolean = false) => {
     setLoading(true);
+    setError(null);
+    setDashboard(null);
+    setSectors([]);
     try {
       const [dashRes, secRes] = await Promise.all([
-        fetch(`http://127.0.0.1:8000/api/market/intelligence/dashboard?universe=${universe}&force_refresh=${force}`),
-        fetch(`http://127.0.0.1:8000/api/market/intelligence/sectors?universe=${universe}&force_refresh=${force}`),
+        apiFetch(`/api/market/intelligence/dashboard?universe=${universe}&force_refresh=${force}`),
+        apiFetch(`/api/market/intelligence/sectors?universe=${universe}&force_refresh=${force}`),
       ]);
 
-      if (dashRes.ok) {
-        const d: DashboardData = await dashRes.json();
-        setDashboard(d);
-      }
-      if (secRes.ok) {
-        const s = await secRes.json();
-        setSectors(s.sectors || []);
-      }
+      if (!dashRes.ok) throw new Error(`Market overview API returned HTTP ${dashRes.status}.`);
+      if (!secRes.ok) throw new Error(`Sector intelligence API returned HTTP ${secRes.status}.`);
+      const [d, s] = await Promise.all([dashRes.json(), secRes.json()]);
+      setDashboard(d);
+      setSectors(s.sectors || []);
     } catch (err) {
       console.error("Error fetching market intelligence:", err);
+      setError(err instanceof Error ? err.message : "Market intelligence service is unavailable.");
     } finally {
       setLoading(false);
     }
@@ -153,13 +158,13 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
     return sectors.filter((s) => s.rotation_quadrant === quadrantFilter);
   }, [sectors, quadrantFilter]);
 
-  const displayedStocks = useMemo(() => {
+  const displayedExtremesStocks = useMemo(() => {
     if (!dashboard) return [];
     let list: StockItem[] = [];
-    if (activeTab === "gainers") list = dashboard.leaders.gainers;
-    else if (activeTab === "losers") list = dashboard.leaders.losers;
-    else if (activeTab === "volume") list = dashboard.leaders.volume_surge;
-    else if (activeTab === "highs52") list = dashboard.extremes_52w.near_highs;
+    if (extremesTab === "near_highs") list = dashboard.extremes_52w.near_highs;
+    else if (extremesTab === "new_highs") list = dashboard.extremes_52w.new_highs;
+    else if (extremesTab === "near_lows") list = dashboard.extremes_52w.near_lows;
+    else if (extremesTab === "new_lows") list = dashboard.extremes_52w.new_lows;
 
     if (sectorFilter !== "ALL") {
       list = list.filter((s) => s.sector === sectorFilter);
@@ -176,7 +181,7 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
       }
       return s;
     });
-  }, [dashboard, activeTab, sectorFilter, liveQuotes]);
+  }, [dashboard, extremesTab, sectorFilter, liveQuotes]);
 
   const regimeColor = useMemo(() => {
     const reg = dashboard?.market_regime?.regime;
@@ -220,13 +225,19 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
                 border: "1px solid rgba(59, 130, 246, 0.3)",
               }}
             >
-              DATA MODE: {dashboard?.metadata?.data_mode || "HISTORICAL"}
+              DATA MODE: {dashboard?.metadata?.data_mode || "UNAVAILABLE"}
             </span>
           </div>
           <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#8c9bb0" }}>
             Real-time equity market dynamics, advance/decline distribution, sector rotation, and 52-week extremes.
           </p>
         </div>
+
+        {error && (
+          <div className="notice" role="status">
+            Market intelligence unavailable: {error} Historical or demo values are not substituted.
+          </div>
+        )}
 
         {/* Universe Selector & Refresh */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -646,142 +657,194 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
         </div>
       </div>
 
-      {/* Movers & Stock Intelligence Tables */}
-      <div style={{ background: "#111925", border: "1px solid #202d40", borderRadius: "10px", padding: "20px" }}>
+      {/* Upgraded Market Movers & Price–Volume Confluence Intelligence (Phase 14) */}
+      <div style={{ marginTop: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
-          <div style={{ display: "flex", gap: "8px" }}>
-            {[
-              { id: "gainers", label: "Top Gainers" },
-              { id: "losers", label: "Top Losers" },
-              { id: "volume", label: "Volume Surge (RVOL)" },
-              { id: "highs52", label: "Near 52W Highs" },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id as any)}
-                style={{
-                  background: activeTab === t.id ? "#1e293b" : "transparent",
-                  color: activeTab === t.id ? "#38bdf8" : "#94a3b8",
-                  border: activeTab === t.id ? "1px solid #334155" : "1px solid transparent",
-                  padding: "6px 14px",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, color: "#f8fafc", margin: "0 0 4px 0" }}>
+              Market Movers & Price–Volume Confluence Intelligence
+            </h2>
+            <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
+              Institutional momentum, volume surges, and automated price–volume confluence intersections
+            </p>
           </div>
-
-          {sectorFilter !== "ALL" && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "11px", color: "#94a3b8" }}>Filtering by Sector: </span>
-              <span
-                style={{
-                  fontSize: "11px",
-                  padding: "3px 8px",
-                  borderRadius: "4px",
-                  background: "#2563eb",
-                  color: "#fff",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-                onClick={() => setSectorFilter("ALL")}
-              >
-                {sectorFilter} ✕
-              </span>
-            </div>
-          )}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={() => setMoversViewTab("confluence")}
+              style={{
+                background: moversViewTab === "confluence" ? "#1e293b" : "transparent",
+                color: moversViewTab === "confluence" ? "#38bdf8" : "#94a3b8",
+                border: moversViewTab === "confluence" ? "1px solid #38bdf8" : "1px solid #334155",
+                padding: "6px 14px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              ⇅ Institutional Movers & Confluence
+            </button>
+            <button
+              onClick={() => setMoversViewTab("52w")}
+              style={{
+                background: moversViewTab === "52w" ? "#1e293b" : "transparent",
+                color: moversViewTab === "52w" ? "#38bdf8" : "#94a3b8",
+                border: moversViewTab === "52w" ? "1px solid #38bdf8" : "1px solid #334155",
+                padding: "6px 14px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              ★ 52-Week Extremes
+            </button>
+          </div>
         </div>
 
-        {/* Table View */}
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid #1e293b", color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>
-                <th style={{ padding: "10px 12px" }}>Symbol</th>
-                <th style={{ padding: "10px 12px" }}>Sector</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Price (₹)</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Change %</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Relative Vol</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>P/E Ratio</th>
-                <th style={{ padding: "10px 12px", textAlign: "center" }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedStocks.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "30px", color: "#64748b", fontSize: "13px" }}>
-                    No stocks matching the current filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                displayedStocks.map((stock) => {
-                  const isPos = stock.daily_change_pct >= 0;
-                  return (
-                    <tr
-                      key={stock.symbol}
-                      style={{
-                        borderBottom: "1px solid #16202e",
-                        transition: "background 0.15s ease",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#162233")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <td style={{ padding: "12px" }}>
-                        <div style={{ fontWeight: 700, color: "#f8fafc", fontSize: "13px" }}>{stock.symbol}</div>
-                        <div style={{ fontSize: "11px", color: "#64748b" }}>{stock.company_name}</div>
-                      </td>
-                      <td style={{ padding: "12px", fontSize: "12px", color: "#94a3b8" }}>{stock.sector}</td>
-                      <td style={{ padding: "12px", textAlign: "right", fontSize: "13px", fontWeight: 700, color: "#f8fafc" }}>
-                        ₹{stock.close.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right" }}>
-                        <span
-                          style={{
-                            padding: "3px 8px",
-                            borderRadius: "4px",
-                            fontSize: "12px",
-                            fontWeight: 700,
-                            background: isPos ? "rgba(38,199,139,0.15)" : "rgba(239,102,118,0.15)",
-                            color: isPos ? "#26c78b" : "#ef6676",
-                          }}
-                        >
-                          {isPos ? "+" : ""}{stock.daily_change_pct.toFixed(2)}%
-                        </span>
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontSize: "12px", color: stock.relative_volume >= 1.5 ? "#38bdf8" : "#cbd5e1" }}>
-                        {stock.relative_volume.toFixed(2)}x
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontSize: "12px", color: "#94a3b8" }}>
-                        {stock.pe ? stock.pe.toFixed(1) : "—"}
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "center" }}>
-                        <button
-                          onClick={() => onSelectStock(stock.symbol, "chart")}
-                          style={{
-                            background: "#1e293b",
-                            color: "#38bdf8",
-                            border: "1px solid #334155",
-                            padding: "4px 10px",
-                            borderRadius: "4px",
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Analyze Chart
-                        </button>
+        {moversViewTab === "confluence" ? (
+          <MarketMoversConfluenceView
+            onSelectStock={onSelectStock}
+            initialUniverse={universe}
+          />
+        ) : (
+          <div style={{ background: "#111925", border: "1px solid #202d40", borderRadius: "10px", padding: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {[
+                  { id: "near_highs", label: "Near 52W Highs" },
+                  { id: "new_highs", label: "New 52W Highs" },
+                  { id: "near_lows", label: "Near 52W Lows" },
+                  { id: "new_lows", label: "New 52W Lows" },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setExtremesTab(t.id as any)}
+                    style={{
+                      background: extremesTab === t.id ? "#1e293b" : "transparent",
+                      color: extremesTab === t.id ? "#38bdf8" : "#94a3b8",
+                      border: extremesTab === t.id ? "1px solid #334155" : "1px solid transparent",
+                      padding: "6px 14px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {sectorFilter !== "ALL" && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "11px", color: "#94a3b8" }}>Filtering by Sector: </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      padding: "3px 8px",
+                      borderRadius: "4px",
+                      background: "#2563eb",
+                      color: "#fff",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setSectorFilter("ALL")}
+                  >
+                    {sectorFilter} ✕
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Table View */}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #1e293b", color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>
+                    <th style={{ padding: "10px 12px" }}>Symbol</th>
+                    <th style={{ padding: "10px 12px" }}>Sector</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Price (₹)</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Change %</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right" }}>52W High</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right" }}>52W Low</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedExtremesStocks.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", padding: "30px", color: "#64748b", fontSize: "13px" }}>
+                        No stocks matching the current 52-week extreme criteria.
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                  ) : (
+                    displayedExtremesStocks.map((stock) => {
+                      const isPos = stock.daily_change_pct >= 0;
+                      return (
+                        <tr
+                          key={stock.symbol}
+                          style={{
+                            borderBottom: "1px solid #16202e",
+                            transition: "background 0.15s ease",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#162233")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        >
+                          <td style={{ padding: "12px" }}>
+                            <div style={{ fontWeight: 700, color: "#f8fafc", fontSize: "13px" }}>{stock.symbol}</div>
+                            <div style={{ fontSize: "11px", color: "#64748b" }}>{stock.company_name}</div>
+                          </td>
+                          <td style={{ padding: "12px", fontSize: "12px", color: "#94a3b8" }}>{stock.sector}</td>
+                          <td style={{ padding: "12px", textAlign: "right", fontSize: "13px", fontWeight: 700, color: "#f8fafc" }}>
+                            ₹{stock.close.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "right" }}>
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                fontSize: "12px",
+                                fontWeight: 700,
+                                background: isPos ? "rgba(38,199,139,0.15)" : "rgba(239,102,118,0.15)",
+                                color: isPos ? "#26c78b" : "#ef6676",
+                              }}
+                            >
+                              {isPos ? "+" : ""}{stock.daily_change_pct.toFixed(2)}%
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "right", fontSize: "12px", color: "#38bdf8" }}>
+                            {stock.week_52_high ? `₹${stock.week_52_high.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "—"}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "right", fontSize: "12px", color: "#f43f5e" }}>
+                            {stock.week_52_low ? `₹${stock.week_52_low.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "—"}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center" }}>
+                            <button
+                              onClick={() => onSelectStock(stock.symbol, "chart")}
+                              style={{
+                                background: "#1e293b",
+                                color: "#38bdf8",
+                                border: "1px solid #334155",
+                                padding: "4px 10px",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Analyze Chart
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

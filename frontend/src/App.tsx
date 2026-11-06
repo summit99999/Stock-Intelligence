@@ -3,6 +3,7 @@ import "./style.css";
 import StockScreener from "./components/StockScreener";
 import CompanyResearch from "./components/CompanyResearch";
 import MarketOverview from "./components/MarketOverview";
+import MarketMoversConfluenceView from "./components/MarketMoversConfluenceView";
 import TechnicalAnalysisView from "./components/TechnicalAnalysisView";
 import VolumeAnalyticsView from "./components/VolumeAnalyticsView";
 import FootprintOrderFlowView from "./components/FootprintOrderFlowView";
@@ -19,6 +20,12 @@ import MarketScannerView from "./components/MarketScannerView";
 import SetupBoardView from "./components/SetupBoardView";
 import MoneyFlowIntelligenceView from "./components/MoneyFlowIntelligenceView";
 import UnifiedResearchDashboardView from "./components/UnifiedResearchDashboardView";
+import DashboardHome from "./components/DashboardHome";
+import IntradayDataHealthView from "./components/IntradayDataHealthView";
+import { isAuthEnabled } from "./api/config";
+import { getCurrentSession, subscribeAuthState, signOutUser } from "./api/supabaseClient";
+import AuthGateway from "./components/AuthGateway";
+import type { Session } from "@supabase/supabase-js";
 import {
   fetchLiveFeedStatus,
   fetchLiveQuotes,
@@ -72,44 +79,32 @@ interface NavItemDef {
 
 const navSections: { section: string; items: NavItemDef[] }[] = [
   {
-    section: "MARKET SCANNER & RADAR",
+    section: "MARKET",
     items: [
-      { name: "Dashboard", icon: "▦", section: "MARKET SCANNER & RADAR" },
-      { name: "Unified Research", icon: "🔬", section: "MARKET SCANNER & RADAR", tag: "ENGINE" },
-      { name: "Market Overview", icon: "◫", section: "MARKET SCANNER & RADAR" },
-      { name: "Money Flow Intelligence", icon: "🌊", section: "MARKET SCANNER & RADAR", tag: "FLOW" },
-      { name: "Market Scanner", icon: "🔍", section: "MARKET SCANNER & RADAR", tag: "VL" },
-      { name: "Bullish Setups", icon: "▲", section: "MARKET SCANNER & RADAR", tag: "BULL" },
-      { name: "Bearish Setups", icon: "▼", section: "MARKET SCANNER & RADAR", tag: "BEAR" },
-      { name: "Consolidation", icon: "▤", section: "MARKET SCANNER & RADAR" },
+      { name: "Overview", icon: "▦", section: "MARKET" },
+      { name: "Market Intelligence", icon: "◫", section: "MARKET" },
+      { name: "Market Movers", icon: "⇅", section: "MARKET", tag: "NEW" },
+      { name: "Stock Scanner", icon: "⌕", section: "MARKET" },
+      { name: "Money Flow Intelligence", icon: "↗", section: "MARKET", tag: "FLOW" },
+      { name: "Sector Rotation", icon: "◌", section: "MARKET" },
     ],
   },
   {
-    section: "CHARTS & ANALYSIS",
+    section: "RESEARCH",
     items: [
-      { name: "Technical Charts", icon: "⌁", section: "CHARTS & ANALYSIS", tag: "PRO" },
-      { name: "Order Blocks", icon: "🧱", section: "CHARTS & ANALYSIS", tag: "SMC" },
-      { name: "Volume Analytics", icon: "📊", section: "CHARTS & ANALYSIS" },
-      { name: "Market X-Ray", icon: "🌐", section: "CHARTS & ANALYSIS", tag: "PRO" },
-      { name: "Smart Money Concepts", icon: "🏛", section: "CHARTS & ANALYSIS", tag: "SMC" },
-      { name: "Fundamental Research", icon: "🏢", section: "CHARTS & ANALYSIS" },
-      { name: "Footprint & Order Flow", icon: "⚡", section: "CHARTS & ANALYSIS" },
+      { name: "Advanced Charts", icon: "⌁", section: "RESEARCH", tag: "PRO" },
+      { name: "Intraday Data Health", icon: "◉", section: "RESEARCH" },
+      { name: "Fundamental Analysis", icon: "▤", section: "RESEARCH" },
+      { name: "SMC Analysis", icon: "⌗", section: "RESEARCH", tag: "SMC" },
+      { name: "Backtesting", icon: "◷", section: "RESEARCH" },
     ],
   },
   {
-    section: "EXECUTION & QUANT",
+    section: "WORKSPACE",
     items: [
-      { name: "Backtesting", icon: "⏱", section: "EXECUTION & QUANT", tag: "QUANT" },
-      { name: "Trade Planner", icon: "📐", section: "EXECUTION & QUANT" },
-      { name: "Watchlist", icon: "☆", section: "EXECUTION & QUANT" },
-      { name: "Alerts", icon: "🔔", section: "EXECUTION & QUANT" },
-      { name: "AI Mentor", icon: "🤖", section: "EXECUTION & QUANT", tag: "AI" },
-    ],
-  },
-  {
-    section: "SYSTEM",
-    items: [
-      { name: "Settings", icon: "⚙", section: "SYSTEM" },
+      { name: "Watchlists", icon: "☆", section: "WORKSPACE" },
+      { name: "Alerts", icon: "♧", section: "WORKSPACE" },
+      { name: "Settings", icon: "⚙", section: "WORKSPACE" },
     ],
   },
 ];
@@ -130,14 +125,35 @@ function Sparkline({ points, positive }: { points: string; positive: boolean }) 
 }
 
 function App() {
-  const [activePage, setActivePage] = useState("Dashboard");
+  const [activePage, setActivePage] = useState("Overview");
   const [currentSymbol, setCurrentSymbol] = useState("RELIANCE");
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("1D");
 
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(isAuthEnabled);
+
   const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
   const [feedStatus, setFeedStatus] = useState<LiveFeedStatus | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (isAuthEnabled) {
+      getCurrentSession().then((sess) => {
+        setSession(sess);
+        setAuthLoading(false);
+      });
+      const subscription = subscribeAuthState((newSess) => {
+        setSession(newSess);
+        setAuthLoading(false);
+      });
+      return () => {
+        subscription?.unsubscribe();
+      };
+    } else {
+      setAuthLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     // Initial fetch of feed status and quotes
@@ -259,18 +275,42 @@ function App() {
 
   const handleOpenChart = (sym: string) => {
     setCurrentSymbol(sym);
-    setActivePage("Technical Analysis");
+    setActivePage("Advanced Charts");
   };
 
   const handleOpenResearch = (sym: string) => {
     setCurrentSymbol(sym);
-    setActivePage("Fundamental Research");
+    setActivePage("Fundamental Analysis");
   };
 
   const handleOpenPlanner = (sym: string) => {
     setCurrentSymbol(sym);
     setActivePage("Trade Planner");
   };
+
+  if (authLoading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: "100vh",
+          background: "#080c14",
+          color: "#60a5fa",
+          fontSize: "14px",
+          fontWeight: 600,
+          fontFamily: "'Inter', sans-serif",
+        }}
+      >
+        Initializing Stock Intelligence Pro Session...
+      </div>
+    );
+  }
+
+  if (isAuthEnabled && !session) {
+    return <AuthGateway onSuccess={() => setAuthLoading(false)} />;
+  }
 
   return (
     <div className="app-shell">
@@ -299,6 +339,18 @@ function App() {
                 </button>
               ))}
             </div>
+          ))}
+        </nav>
+        <nav className="mobile-nav" aria-label="Primary navigation">
+          {navSections.flatMap((section) => section.items).map((item) => (
+            <button
+              key={item.name}
+              className={`nav-item ${activePage === item.name ? "active" : ""}`}
+              onClick={() => setActivePage(item.name)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              {item.name}
+            </button>
           ))}
         </nav>
 
@@ -347,6 +399,23 @@ function App() {
             <h1>{activePage}</h1>
           </div>
           <div className="topbar-right">
+            <form
+              className="topbar-search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const symbol = search.trim().toUpperCase();
+                if (symbol) handleOpenChart(symbol);
+              }}
+            >
+              <span aria-hidden="true">⌕</span>
+              <input
+                aria-label="Search stocks"
+                placeholder="Search stocks"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <kbd>↵</kbd>
+            </form>
             {(isRateLimited || isDisabled) && (
               <button
                 className="refresh-action-btn"
@@ -406,12 +475,101 @@ function App() {
                 ? "FEED DISABLED"
                 : "DEMO MODE"}
             </span>
-            <div className="profile-avatar">SI</div>
+            {session && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "11px", color: "#94a3b8", background: "#131c2a", padding: "4px 8px", borderRadius: "6px", border: "1px solid #1e2c40" }}>
+                  👤 {session.user?.email}
+                </span>
+                <button
+                  onClick={() => signOutUser()}
+                  style={{
+                    background: "rgba(239, 68, 68, 0.15)",
+                    color: "#f87171",
+                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                  title="Sign out of Stock Intelligence Pro"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
+            <button className="topbar-icon-button" aria-label="Open alerts" onClick={() => setActivePage("Alerts")}>♧</button>
+            <button className="profile-avatar" aria-label="Open settings" onClick={() => setActivePage("Settings")}>SI</button>
           </div>
         </header>
 
+        {activePage === "Overview" && (
+          <DashboardHome
+            onSelectStock={handleOpenChart}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {activePage === "Intraday Data Health" && <IntradayDataHealthView />}
+
+        {(activePage === "Market Intelligence" || activePage === "Sector Rotation") && (
+          <MarketOverview
+            onSelectStock={(sym, page) => {
+              setCurrentSymbol(sym);
+              setActivePage(page === "Company Research" ? "Fundamental Analysis" : "Advanced Charts");
+            }}
+            liveQuotes={liveQuotes}
+          />
+        )}
+
+        {activePage === "Market Movers" && (
+          <MarketMoversConfluenceView
+            onSelectStock={(sym, page) => {
+              setCurrentSymbol(sym);
+              setActivePage(page === "Company Research" ? "Fundamental Analysis" : "Advanced Charts");
+            }}
+          />
+        )}
+
+        {activePage === "Stock Scanner" && (
+          <MarketScannerView onSelectStock={handleOpenChart} />
+        )}
+
+        {activePage === "Advanced Charts" && (
+          <TechnicalAnalysisView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            onNavigateToResearch={handleOpenResearch}
+            onNavigateToPlanner={handleOpenPlanner}
+          />
+        )}
+
+        {activePage === "Fundamental Analysis" && (
+          <CompanyResearch initialSymbol={currentSymbol} onSelectStock={setCurrentSymbol} />
+        )}
+
+        {activePage === "SMC Analysis" && (
+          <SmartMoneyConceptsView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {activePage === "Backtesting" && (
+          <SMCBacktestView
+            symbol={currentSymbol}
+            onSymbolChange={setCurrentSymbol}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {activePage === "Watchlists" && (
+          <WatchlistView onSelectSymbol={setCurrentSymbol} onNavigate={setActivePage} liveQuotes={liveQuotes} />
+        )}
+
         {/* 1. Dashboard View */}
-        {activePage === "Dashboard" && (
+        {activePage === "Dashboard" && false && (
           <>
             <section className="welcome-row">
               <div>
@@ -639,6 +797,20 @@ function App() {
           />
         )}
 
+        {/* 2b. Market Movers & Confluence Intelligence (Phase 14) */}
+        {activePage === "Market Movers" && (
+          <MarketMoversConfluenceView
+            onSelectStock={(sym, pg) => {
+              setCurrentSymbol(sym);
+              if (pg === "Company Research") {
+                setActivePage("Fundamental Analysis");
+              } else {
+                setActivePage("Advanced Charts");
+              }
+            }}
+          />
+        )}
+
         {/* 2b. Money Flow & Daily Volume Intelligence */}
         {activePage === "Money Flow Intelligence" && (
           <MoneyFlowIntelligenceView
@@ -662,7 +834,7 @@ function App() {
         )}
 
         {/* 3b. Legacy Screener */}
-        {activePage === "Stock Scanner" && (
+        {activePage === "Legacy Stock Scanner" && (
           <StockScreener
             onOpenResearch={handleOpenResearch}
           />

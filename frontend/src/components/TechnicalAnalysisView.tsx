@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useEffect, useState } from "react";
 import TradingViewChart from "./TradingViewChart";
 
@@ -23,7 +24,7 @@ export default function TechnicalAnalysisView({
     let cancelled = false;
     setLoading(true);
 
-    fetch(`http://127.0.0.1:8000/api/stocks/${symbol}`)
+    apiFetch(`/api/stocks/${symbol}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled && data) {

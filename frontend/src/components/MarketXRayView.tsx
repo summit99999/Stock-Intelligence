@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect } from "react";
 
 interface XRayStock {
@@ -69,7 +70,7 @@ export default function MarketXRayView({ onSelectSymbol, onNavigate }: MarketXRa
   const loadXRay = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/smc/xray?limit=50");
+      const res = await apiFetch("/api/smc/xray?limit=50");
       if (res.ok) {
         const json = await res.json();
         setData(json);

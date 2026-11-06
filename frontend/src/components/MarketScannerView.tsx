@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useEffect, useState, useMemo } from "react";
 
 interface SetupRecord {
@@ -115,6 +116,11 @@ export default function MarketScannerView({
   const [filterMinRoe, setFilterMinRoe] = useState<string>("");
   const [filterMaxDebtEquity, setFilterMaxDebtEquity] = useState<string>("");
   const [filterMinProfitGrowth, setFilterMinProfitGrowth] = useState<string>("");
+  const [filterFreshOrderBlock, setFilterFreshOrderBlock] = useState<boolean>(false);
+  const [filterFairValueGap, setFilterFairValueGap] = useState<boolean>(false);
+  const [filterBreakout, setFilterBreakout] = useState<boolean>(false);
+  const [filterStructureTrend, setFilterStructureTrend] = useState<string>("");
+  const [minimumSetupScore, setMinimumSetupScore] = useState<string>("");
 
   // Custom Saved Scanners Modal State
   const [showSavedModal, setShowSavedModal] = useState<boolean>(false);
@@ -155,6 +161,10 @@ export default function MarketScannerView({
       if (filterMinRoe) filtersObj.min_roe = parseFloat(filterMinRoe);
       if (filterMaxDebtEquity) filtersObj.max_debt_equity = parseFloat(filterMaxDebtEquity);
       if (filterMinProfitGrowth) filtersObj.min_profit_growth = parseFloat(filterMinProfitGrowth);
+      if (filterFreshOrderBlock) filtersObj.has_fresh_ob = true;
+      if (filterFairValueGap) filtersObj.has_fvg = true;
+      if (filterBreakout) filtersObj.is_breakout = true;
+      if (filterStructureTrend) filtersObj.structure_trend = filterStructureTrend;
 
       const payload = {
         universe,
@@ -167,7 +177,7 @@ export default function MarketScannerView({
         page_size: pageSize,
       };
 
-      const res = await fetch("http://127.0.0.1:8000/api/scanner/advanced/scan", {
+      const res = await apiFetch("/api/scanner/advanced/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -193,7 +203,7 @@ export default function MarketScannerView({
   // Load Watchlists & Saved Scanners
   const loadSavedScanners = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/scanner/custom/saved");
+      const res = await apiFetch("/api/scanner/custom/saved");
       if (res.ok) {
         const data = await res.json();
         setSavedScanners(data);
@@ -205,7 +215,7 @@ export default function MarketScannerView({
 
   const loadWatchlists = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/watchlists");
+      const res = await apiFetch("/api/watchlists");
       if (res.ok) {
         const data = await res.json();
         setWatchlists(data);
@@ -237,9 +247,13 @@ export default function MarketScannerView({
     if (filterMinRoe) filtersObj.min_roe = parseFloat(filterMinRoe);
     if (filterMaxDebtEquity) filtersObj.max_debt_equity = parseFloat(filterMaxDebtEquity);
     if (filterMinProfitGrowth) filtersObj.min_profit_growth = parseFloat(filterMinProfitGrowth);
+    if (filterFreshOrderBlock) filtersObj.has_fresh_ob = true;
+    if (filterFairValueGap) filtersObj.has_fvg = true;
+    if (filterBreakout) filtersObj.is_breakout = true;
+    if (filterStructureTrend) filtersObj.structure_trend = filterStructureTrend;
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/scanner/custom/save", {
+      const res = await apiFetch("/api/scanner/custom/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -266,7 +280,7 @@ export default function MarketScannerView({
   const handleAddSymbolToWl = async (wlId: number) => {
     if (!selectedStockForWl) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/watchlists/${wlId}/symbols`, {
+      const res = await apiFetch(`/api/watchlists/${wlId}/symbols`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: selectedStockForWl }),
@@ -283,20 +297,23 @@ export default function MarketScannerView({
   };
 
   const handleExportCsv = () => {
-    window.open(`http://127.0.0.1:8000/api/scanner/advanced/export-csv?universe=${universe}&ranking_preset=${activePreset}&logic_mode=${logicMode}`, "_blank");
+    window.open(`/api/scanner/advanced/export-csv?universe=${universe}&ranking_preset=${activePreset}&logic_mode=${logicMode}`, "_blank");
   };
 
   const filteredItems = useMemo(() => {
     if (!scannerData?.items) return [];
-    if (!search.trim()) return scannerData.items;
     const q = search.toLowerCase();
     return scannerData.items.filter(
-      (s) =>
-        s.symbol.toLowerCase().includes(q) ||
-        s.company_name.toLowerCase().includes(q) ||
-        s.sector.toLowerCase().includes(q)
+      (s) => {
+        const matchesSearch = !q ||
+          s.symbol.toLowerCase().includes(q) ||
+          s.company_name.toLowerCase().includes(q) ||
+          s.sector.toLowerCase().includes(q);
+        const minimumScore = parseFloat(minimumSetupScore);
+        return matchesSearch && (!Number.isFinite(minimumScore) || (s.rank_score != null && s.rank_score >= minimumScore));
+      }
     );
-  }, [scannerData, search]);
+  }, [scannerData, search, minimumSetupScore]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -340,7 +357,7 @@ export default function MarketScannerView({
                 letterSpacing: "0.5px",
               }}
             >
-              PHASE 11 ENGINE
+              MARKET SCAN
             </span>
           </div>
           <p style={{ margin: "6px 0 0 0", color: "#8c9bb0", fontSize: "13px" }}>
@@ -494,7 +511,7 @@ export default function MarketScannerView({
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h4 style={{ margin: 0, fontSize: "14px", color: "#f1f5f9", fontWeight: 700 }}>
-              Multi-Condition Technical & Fundamental Filters
+              Technical, Fundamental, Volume & SMC Filters
             </h4>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <span style={{ fontSize: "12px", color: "#8c9bb0" }}>Logic Combination:</span>
@@ -618,6 +635,40 @@ export default function MarketScannerView({
                 style={{ width: "100%", background: "#0a0f18", border: "1px solid #1e2c40", padding: "6px 10px", borderRadius: "6px", color: "#fff", fontSize: "11px" }}
               />
             </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#38bdf8", textTransform: "uppercase" }}>Smart Money Concepts</span>
+              <label style={{ fontSize: "12px", color: "#cbd5e1", display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input type="checkbox" checked={filterFreshOrderBlock} onChange={(e) => setFilterFreshOrderBlock(e.target.checked)} />
+                Fresh order block
+              </label>
+              <label style={{ fontSize: "12px", color: "#cbd5e1", display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input type="checkbox" checked={filterFairValueGap} onChange={(e) => setFilterFairValueGap(e.target.checked)} />
+                Fair value gap
+              </label>
+              <label style={{ fontSize: "12px", color: "#cbd5e1", display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input type="checkbox" checked={filterBreakout} onChange={(e) => setFilterBreakout(e.target.checked)} />
+                Confirmed breakout
+              </label>
+              <select
+                value={filterStructureTrend}
+                onChange={(e) => setFilterStructureTrend(e.target.value)}
+                style={{ width: "100%", background: "#0a0f18", border: "1px solid #1e2c40", padding: "6px 10px", borderRadius: "6px", color: "#fff", fontSize: "11px" }}
+              >
+                <option value="">Any market structure</option>
+                <option value="Bullish">Bullish structure</option>
+                <option value="Bearish">Bearish structure</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                placeholder="Minimum setup score (current page)"
+                value={minimumSetupScore}
+                onChange={(e) => setMinimumSetupScore(e.target.value)}
+                style={{ width: "100%", background: "#0a0f18", border: "1px solid #1e2c40", padding: "6px 10px", borderRadius: "6px", color: "#fff", fontSize: "11px" }}
+              />
+            </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
@@ -635,6 +686,11 @@ export default function MarketScannerView({
                 setFilterMinRoe("");
                 setFilterMaxDebtEquity("");
                 setFilterMinProfitGrowth("");
+                setFilterFreshOrderBlock(false);
+                setFilterFairValueGap(false);
+                setFilterBreakout(false);
+                setFilterStructureTrend("");
+                setMinimumSetupScore("");
               }}
               style={{ background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", padding: "6px 14px", borderRadius: "6px", fontSize: "12px", cursor: "pointer" }}
             >
@@ -1169,7 +1225,7 @@ export default function MarketScannerView({
                         onClick={async () => {
                           const ok = confirm(`Delete custom scanner '${sc.name}'?`);
                           if (ok) {
-                            await fetch(`http://127.0.0.1:8000/api/scanner/custom/${sc.id}`, { method: "DELETE" });
+                            await apiFetch(`/api/scanner/custom/${sc.id}`, { method: "DELETE" });
                             loadSavedScanners();
                           }
                         }}

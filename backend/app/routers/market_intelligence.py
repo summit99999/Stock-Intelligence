@@ -16,8 +16,10 @@ from __future__ import annotations
 import json
 import time
 from typing import Any, Optional
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
+
+from app.auth import get_current_user
 
 from app.database import (
     add_symbol_to_watchlist,
@@ -183,9 +185,11 @@ def export_advanced_scan_csv(
 # ---------------------------------------------------------------------------
 
 @router.get("/api/scanner/custom/saved")
-def get_custom_scanners_list() -> list[dict[str, Any]]:
-    """List all saved custom scanner definitions."""
-    scanners = list_custom_scanners()
+def get_custom_scanners_list(
+    current_user: dict = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """List all saved custom scanner definitions for the authenticated user."""
+    scanners = list_custom_scanners(user_id=current_user["id"])
     for s in scanners:
         try:
             s["conditions"] = json.loads(s.get("conditions_json", "{}"))
@@ -195,7 +199,10 @@ def get_custom_scanners_list() -> list[dict[str, Any]]:
 
 
 @router.post("/api/scanner/custom/save")
-def create_custom_scanner_endpoint(payload: SaveCustomScannerPayload) -> dict[str, Any]:
+def create_custom_scanner_endpoint(
+    payload: SaveCustomScannerPayload,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Create and save a new custom scanner configuration."""
     cond_str = json.dumps(payload.conditions)
     sc_id = save_custom_scanner(
@@ -205,6 +212,7 @@ def create_custom_scanner_endpoint(payload: SaveCustomScannerPayload) -> dict[st
         timeframe=payload.timeframe,
         logic_mode=payload.logic_mode,
         conditions_json=cond_str,
+        user_id=current_user["id"],
     )
     return {
         "status": "success",
@@ -216,7 +224,9 @@ def create_custom_scanner_endpoint(payload: SaveCustomScannerPayload) -> dict[st
 
 @router.put("/api/scanner/custom/{scanner_id}")
 def update_custom_scanner_endpoint(
-    scanner_id: int, payload: SaveCustomScannerPayload
+    scanner_id: int,
+    payload: SaveCustomScannerPayload,
+    current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Update an existing saved custom scanner."""
     cond_str = json.dumps(payload.conditions)
@@ -228,6 +238,7 @@ def update_custom_scanner_endpoint(
         timeframe=payload.timeframe,
         logic_mode=payload.logic_mode,
         conditions_json=cond_str,
+        user_id=current_user["id"],
     )
     if not ok:
         raise HTTPException(status_code=404, detail="Custom scanner not found.")
@@ -235,9 +246,12 @@ def update_custom_scanner_endpoint(
 
 
 @router.delete("/api/scanner/custom/{scanner_id}")
-def delete_custom_scanner_endpoint(scanner_id: int) -> dict[str, Any]:
+def delete_custom_scanner_endpoint(
+    scanner_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Delete a saved custom scanner."""
-    ok = delete_custom_scanner(scanner_id)
+    ok = delete_custom_scanner(scanner_id, user_id=current_user["id"])
     if not ok:
         raise HTTPException(status_code=404, detail="Custom scanner not found.")
     return {"status": "success", "message": "Custom scanner deleted."}
@@ -248,9 +262,11 @@ def delete_custom_scanner_endpoint(scanner_id: int) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @router.get("/api/watchlists")
-def get_all_watchlists() -> list[dict[str, Any]]:
-    """List all custom watchlists with summary info."""
-    raw_list = list_custom_watchlists()
+def get_all_watchlists(
+    current_user: dict = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """List all custom watchlists with summary info for the authenticated user."""
+    raw_list = list_custom_watchlists(user_id=current_user["id"])
     results = []
     for wl in raw_list:
         try:
@@ -270,21 +286,28 @@ def get_all_watchlists() -> list[dict[str, Any]]:
 
 
 @router.get("/api/watchlists/{watchlist_id}")
-def get_watchlist_detail(watchlist_id: int) -> dict[str, Any]:
+def get_watchlist_detail(
+    watchlist_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Get enriched watchlist by ID with live/database price data."""
-    enriched = get_enriched_watchlist(watchlist_id)
+    enriched = get_enriched_watchlist(watchlist_id, user_id=current_user["id"])
     if not enriched:
         raise HTTPException(status_code=404, detail="Watchlist not found.")
     return enriched
 
 
 @router.post("/api/watchlists")
-def create_watchlist_endpoint(payload: CreateWatchlistPayload) -> dict[str, Any]:
+def create_watchlist_endpoint(
+    payload: CreateWatchlistPayload,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Create a new custom watchlist."""
     wl_id = create_custom_watchlist(
         name=payload.name,
         description=payload.description,
         symbols=payload.symbols,
+        user_id=current_user["id"],
     )
     return {
         "status": "success",
@@ -296,7 +319,9 @@ def create_watchlist_endpoint(payload: CreateWatchlistPayload) -> dict[str, Any]
 
 @router.put("/api/watchlists/{watchlist_id}")
 def update_watchlist_endpoint(
-    watchlist_id: int, payload: CreateWatchlistPayload
+    watchlist_id: int,
+    payload: CreateWatchlistPayload,
+    current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Update watchlist details or symbol list."""
     ok = update_custom_watchlist(
@@ -304,6 +329,7 @@ def update_watchlist_endpoint(
         name=payload.name,
         description=payload.description,
         symbols=payload.symbols,
+        user_id=current_user["id"],
     )
     if not ok:
         raise HTTPException(status_code=404, detail="Watchlist not found.")
@@ -311,9 +337,12 @@ def update_watchlist_endpoint(
 
 
 @router.delete("/api/watchlists/{watchlist_id}")
-def delete_watchlist_endpoint(watchlist_id: int) -> dict[str, Any]:
+def delete_watchlist_endpoint(
+    watchlist_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Delete a watchlist."""
-    ok = delete_custom_watchlist(watchlist_id)
+    ok = delete_custom_watchlist(watchlist_id, user_id=current_user["id"])
     if not ok:
         raise HTTPException(status_code=404, detail="Watchlist not found.")
     return {"status": "success", "message": "Watchlist deleted."}
@@ -321,10 +350,12 @@ def delete_watchlist_endpoint(watchlist_id: int) -> dict[str, Any]:
 
 @router.post("/api/watchlists/{watchlist_id}/symbols")
 def add_symbol_endpoint(
-    watchlist_id: int, payload: AddSymbolPayload
+    watchlist_id: int,
+    payload: AddSymbolPayload,
+    current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Add a stock symbol to a watchlist."""
-    ok = add_symbol_to_watchlist(watchlist_id, payload.symbol)
+    ok = add_symbol_to_watchlist(watchlist_id, payload.symbol, user_id=current_user["id"])
     if not ok:
         raise HTTPException(status_code=404, detail="Watchlist not found.")
     return {"status": "success", "message": f"{payload.symbol.upper()} added to watchlist."}
@@ -332,10 +363,12 @@ def add_symbol_endpoint(
 
 @router.delete("/api/watchlists/{watchlist_id}/symbols/{symbol}")
 def remove_symbol_endpoint(
-    watchlist_id: int, symbol: str
+    watchlist_id: int,
+    symbol: str,
+    current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Remove a stock symbol from a watchlist."""
-    ok = remove_symbol_from_watchlist(watchlist_id, symbol)
+    ok = remove_symbol_from_watchlist(watchlist_id, symbol, user_id=current_user["id"])
     if not ok:
         raise HTTPException(status_code=404, detail="Watchlist not found.")
     return {"status": "success", "message": f"{symbol.upper()} removed from watchlist."}
@@ -347,14 +380,18 @@ def remove_symbol_endpoint(
 
 @router.get("/api/alerts")
 def get_alerts_endpoint(
-    status: Optional[str] = Query(None, description="ACTIVE, MUTED, TRIGGERED")
+    status: Optional[str] = Query(None, description="ACTIVE, MUTED, TRIGGERED"),
+    current_user: dict = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
-    """List all market alerts."""
-    return list_market_alerts(status=status)
+    """List all market alerts for authenticated user."""
+    return list_market_alerts(status=status, user_id=current_user["id"])
 
 
 @router.post("/api/alerts")
-def create_alert_endpoint(payload: CreateAlertPayload) -> dict[str, Any]:
+def create_alert_endpoint(
+    payload: CreateAlertPayload,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Create a new technical or price alert rule."""
     alert_id = create_market_alert(
         symbol=payload.symbol,
@@ -362,6 +399,7 @@ def create_alert_endpoint(payload: CreateAlertPayload) -> dict[str, Any]:
         target_value=payload.target_value,
         timeframe=payload.timeframe,
         note=payload.note,
+        user_id=current_user["id"],
     )
     return {
         "status": "success",
@@ -372,7 +410,9 @@ def create_alert_endpoint(payload: CreateAlertPayload) -> dict[str, Any]:
 
 @router.put("/api/alerts/{alert_id}")
 def update_alert_endpoint(
-    alert_id: int, payload: UpdateAlertPayload
+    alert_id: int,
+    payload: UpdateAlertPayload,
+    current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Update alert status (e.g. MUTE/ACTIVE), target value, or note."""
     ok = update_market_alert(
@@ -380,6 +420,7 @@ def update_alert_endpoint(
         status=payload.status,
         target_value=payload.target_value,
         note=payload.note,
+        user_id=current_user["id"],
     )
     if not ok:
         raise HTTPException(status_code=404, detail="Alert not found.")
@@ -387,16 +428,21 @@ def update_alert_endpoint(
 
 
 @router.delete("/api/alerts/{alert_id}")
-def delete_alert_endpoint(alert_id: int) -> dict[str, Any]:
+def delete_alert_endpoint(
+    alert_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """Delete an alert rule."""
-    ok = delete_market_alert(alert_id)
+    ok = delete_market_alert(alert_id, user_id=current_user["id"])
     if not ok:
         raise HTTPException(status_code=404, detail="Alert not found.")
     return {"status": "success", "message": "Alert deleted."}
 
 
 @router.post("/api/alerts/evaluate")
-def evaluate_alerts_endpoint() -> dict[str, Any]:
+def evaluate_alerts_endpoint(
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Run the automated alert evaluation engine against current market indicators and SMC levels.
     """
@@ -411,14 +457,17 @@ def evaluate_alerts_endpoint() -> dict[str, Any]:
 
 @router.get("/api/alerts/history")
 def get_alerts_history_endpoint(
-    limit: int = Query(50, ge=1, le=200)
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
-    """Retrieve logged alert trigger history events."""
-    return get_market_alert_history(limit=limit)
+    """Retrieve logged alert trigger history events for authenticated user."""
+    return get_market_alert_history(limit=limit, user_id=current_user["id"])
 
 
 @router.delete("/api/alerts/history")
-def clear_alerts_history_endpoint() -> dict[str, Any]:
-    """Clear all alert trigger history events."""
-    deleted_count = clear_market_alert_history()
+def clear_alerts_history_endpoint(
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Clear all alert trigger history events for authenticated user."""
+    deleted_count = clear_market_alert_history(user_id=current_user["id"])
     return {"status": "success", "cleared_count": deleted_count}

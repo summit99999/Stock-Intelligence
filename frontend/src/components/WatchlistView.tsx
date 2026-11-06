@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect } from "react";
 import { LiveQuote } from "../api/marketFeed";
 
@@ -37,6 +38,7 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
   const [activeWatchlistName, setActiveWatchlistName] = useState<string>("");
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [newSymbol, setNewSymbol] = useState("");
   const [selectedSector, setSelectedSector] = useState("ALL");
@@ -50,20 +52,21 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
 
   const loadWatchlists = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/watchlists");
-      if (res.ok) {
-        const data: WatchlistSummary[] = await res.json();
-        setWatchlists(data);
-        if (data.length > 0) {
-          const currentId = activeWatchlistId ?? data[0].id;
-          setActiveWatchlistId(currentId);
-          const found = data.find((w) => w.id === currentId) || data[0];
-          setActiveWatchlistName(found.name);
-          loadWatchlistDetail(found.id);
-        }
+      const res = await apiFetch("/api/watchlists");
+      if (!res.ok) throw new Error(`Watchlists API returned HTTP ${res.status}.`);
+      const data: WatchlistSummary[] = await res.json();
+      setLoadError(null);
+      setWatchlists(data);
+      if (data.length > 0) {
+        const currentId = activeWatchlistId ?? data[0].id;
+        setActiveWatchlistId(currentId);
+        const found = data.find((w) => w.id === currentId) || data[0];
+        setActiveWatchlistName(found.name);
+        loadWatchlistDetail(found.id);
       }
     } catch (err) {
       console.error(err);
+      setLoadError(err instanceof Error ? err.message : "Watchlists are unavailable.");
     } finally {
       setLoading(false);
     }
@@ -72,14 +75,15 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
   const loadWatchlistDetail = async (id: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/watchlists/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data.items || []);
-        setActiveWatchlistName(data.name);
-      }
+      const res = await apiFetch(`/api/watchlists/${id}`);
+      if (!res.ok) throw new Error(`Watchlist detail API returned HTTP ${res.status}.`);
+      const data = await res.json();
+      setLoadError(null);
+      setItems(data.items || []);
+      setActiveWatchlistName(data.name);
     } catch (err) {
       console.error(err);
+      setLoadError(err instanceof Error ? err.message : "Watchlist details are unavailable.");
     } finally {
       setLoading(false);
     }
@@ -99,7 +103,7 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
     e.preventDefault();
     if (!newWlName.trim()) return;
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/watchlists", {
+      const res = await apiFetch("/api/watchlists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newWlName.trim(), description: newWlDesc.trim(), symbols: [] }),
@@ -125,7 +129,7 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
     const ok = confirm(`Delete watchlist '${activeWatchlistName}'?`);
     if (!ok) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/watchlists/${activeWatchlistId}`, {
+      const res = await apiFetch(`/api/watchlists/${activeWatchlistId}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -143,7 +147,7 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
     if (!sym || !activeWatchlistId) return;
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/watchlists/${activeWatchlistId}/symbols`, {
+      const res = await apiFetch(`/api/watchlists/${activeWatchlistId}/symbols`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: sym }),
@@ -161,8 +165,7 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
   const handleRemoveSymbol = async (symbol: string) => {
     if (!activeWatchlistId) return;
     try {
-      const res = await fetch(
-        `http://127.0.0.1:8000/api/watchlists/${activeWatchlistId}/symbols/${symbol}`,
+      const res = await apiFetch(`/api/watchlists/${activeWatchlistId}/symbols/${symbol}`,
         { method: "DELETE" }
       );
       if (res.ok) {
@@ -221,6 +224,11 @@ export default function WatchlistView({ onSelectSymbol, onNavigate, liveQuotes =
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {loadError && (
+        <div className="notice" role="status">
+          Watchlists unavailable: {loadError} No sample watchlists are being shown.
+        </div>
+      )}
       {/* Top Banner & Multi-Watchlist Selector */}
       <div
         style={{

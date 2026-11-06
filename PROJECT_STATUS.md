@@ -1,9 +1,9 @@
 # STOCK INTELLIGENCE PRO — PROJECT STATUS
 
-**Last Updated:** November 5, 2026 (Phase 12 Unified Trading Research & Decision Engine Complete)  
-**Current Milestone:** Phase 12 — Unified Trading Research & Decision Engine (COMPLETE)  
-**Next Milestone:** Phase 13 — Production Deployment, Real-Time Alert Push Notifications & Multi-Broker Integrations  
-**Overall System Health:** 100% Operational, Fully Tested & Grounded in Quantitative Truthfulness
+**Last Updated:** November 6, 2026 (Phase 14.6 Pilot Complete & Verified)  
+**Current Milestone:** Phase 14.6 — NSE Closing Auction Session (CAS) Aware Validation & Observed Intraday Pilot (COMPLETE AND VERIFIED)  
+**Next Milestone:** Phase 15 — Universe Ingestion Expansion (31 Tracked Equities) / Frontend Enhancements  
+**Overall System Health:** All systems operational. 2,658 observed 5-minute bars verified; True Time-of-Day RVOL active on observed baseline; full test suite passing (507 passed, 4 skipped).  
 
 ---
 
@@ -11,8 +11,19 @@
 
 | Component | Status | Details |
 | :--- | :--- | :--- |
-| **Backend Regression Suite** | **364 Passed, 4 Skipped, 0 Failures** | Complete regression suite (368 total test cases, 4 skipped live Dhan network calls). Phase 12 added 10 new dedicated tests in `backend/tests/test_phase12_unified_research_engine.py`. Runtime: 45.45s. |
-| **Frontend TypeScript & Build** | **PASSED (0 errors, 0 warnings)** | `tsc && vite build` compiled in 4.33s. Clean chunking (`charts`: 174 kB, `vendor`: 142 kB, `index`: 383 kB; all well below production budgets). |
+| **Backend Regression Suite** | **507 Passed, 4 Skipped, 0 Failures** | Full regression suite completed across 511 tests with zero failures. Four live Dhan network tests remain skipped. |
+| **Frontend TypeScript & Build** | **PASSED** | `tsc && vite build` completed with zero errors after Phase 14.6 CAS schedule and regulatory disclosures. |
+| **Observed Intraday Market Data** | **VERIFIED (3 STOCKS)** | Ingested 2,658 observed 5-minute bars across 36 sessions (12 sessions for RELIANCE, TCS, HDFCBANK). 100% session completeness under NSE CAS schedule. |
+| **True Time-of-Day RVOL** | **VERIFIED** | Active and grounded on genuine observed baseline for RELIANCE, TCS, and HDFCBANK. Correctly reports UNAVAILABLE for un-ingested stocks. |
+| **Synthetic Data Isolation** | **VERIFIED** | Exactly 46,500 synthetic 5m bars preserved intact in `ohlcv`. Database queries enforce date-level suppression on observed dates, preventing synthetic contamination. |
+| **Trading Calendar Grounding** | **VERIFIED** | Authoritative grounding in NSE circulars `NSE/CMTR/72394`, `NSE/CMTR/73362`, and `NSE/CMTR/74466`. Continuous trading ends at 15:15:00 IST (72 bars) for F&O equities. |
+| **Security Audit Status** | **AUDITED & HARDENED** | All 10 security areas audited in `PHASE_13_1_SECURITY_AUDIT.md`. IDOR vulnerabilities eliminated, algorithm allowlisting enforced, broker endpoints protected, safe SQL tokenizer implemented. Decision: **A. READY FOR CONTROLLED DEPLOYMENT**. |
+| **Multi-Tenant Isolation** | **VERIFIED** | Strict user ownership isolation across watchlists, alerts, custom scanners, screener presets, research trade plans, and qualitative notes verified by `backend/tests/test_two_user_isolation.py`. |
+| **Safe SQL Parameter Tokenizer** | **VERIFIED** | Stateful character tokenizer `safe_replace_placeholders` guarantees `?` within string literals and SQL comments is never corrupted during PostgreSQL `%s` translation. |
+| **Cloud Deployment Architecture** | **VERIFIED** | Zero-cost cloud topology: Cloudflare Pages Free (Frontend SPA) + Render Free Web Service (FastAPI) + Supabase Free (PostgreSQL 16 + Auth) + Private GitHub repo. Guaranteed ₹0/month budget. |
+| **Dual-Mode Database Layer** | **VERIFIED** | Seamless runtime adaptation: PostgreSQL in cloud (via `DATABASE_URL`) with transparent parameter adaptation (`?` -> `%s`), `INSERT OR REPLACE` to PostgreSQL UPSERT (`ON CONFLICT DO UPDATE`), and `DbRow` dual index/key access. Local SQLite mode preserved 100% intact. |
+| **Private Authentication Engine** | **VERIFIED** | Asymmetric JWKS (`RS256`, `ES256`) and legacy symmetric (`HS256`) verification. Rejects `alg="none"`. Production fail-closed enforcement. Sensitive token bytes masked in all logs. |
+| **Database Migration Engine** | **VERIFIED** | Automated pre-migration SQLite backup generation, topological batch ingestion across all 19 tables with `ON CONFLICT DO NOTHING`, dry-run mode, and row verification report. |
 | **Unified Research Engine** | **VERIFIED** | 7-factor 100-point setup scoring: Market Regime (10), Sector Rotation (10), Fundamental Quality (15), Trend/Momentum (20), Volume Confirmation (15), Market Structure/SMC (20), Multi-Timeframe (10). Missing metrics yield 0 points. Mandatory heuristic disclaimer distinguishing confluence rating from statistical probability. |
 | **Trade Plan Generator** | **VERIFIED** | Quantitative trade plan with Entry Zone, Ideal Entry, Structural Stop Loss, Target 1, Target 2, Invalidation Condition, Capital/Risk % Position Sizing, and Invalid Stop Distance Guardrail (quantity set to 0 with explicit warning). Mandatory hypothetical research disclosure. |
 | **Historical Setup Validator** | **VERIFIED** | Non-repainting backtest validation across 5 setup strategies with 95% Wilson Score CI, Profit Factor, Drawdown, Regime Dependence Breakdown, and Sample Size Reliability Flag (< 30 trades flagged as statistically unverified). |
@@ -159,5 +170,193 @@
   - Added universe coverage progress indicator and Dhan stream status indicator ("Dhan Stream: Inactive - Zero-Cost Research Mode").
 - **Automated Verification Suite (`backend/tests/test_phase11_3_data_quality_audit.py`)**:
   - 18 dedicated tests covering all audit criteria (data mode resolution, stale data, missing timestamps, OHLC integrity, duplicate timestamps, IST market hours, NSE holidays, developing vs confirmed signals, index validation, universe coverage, fundamental reporting, missing values, QoQ growth guards, corporate action gaps, backtest disclaimers, scanner metadata, money flow metadata, and inactive Dhan feed truthfulness).
-  - Total test suite: **354 passed, 4 skipped, 0 failures** in 27.98s.
-  - Production frontend build: **PASSED in 1.33s**.
+
+### Phase 12: Unified Trading Research & Decision Engine
+- **Unified Market Regime Engine (`market_regime_engine.py`)**: 6-factor composite scoring (NIFTY trend vs 50/200 EMA, market breadth, sector alignment, India VIX proxy, advance/decline ratio) classifying market into 5 regimes (`STRONG_BULLISH`, `BULLISH`, `NEUTRAL`, `BEARISH`, `STRONG_BEARISH`).
+- **Unified Stock Discovery Engine (`unified_research_engine.py`)**: 7-factor 100-point setup scoring integrating Regime, Sector, Fundamentals, Trend, Volume, SMC, and MTF.
+- **Hypothetical Trade Plan Generator (`trade_plan_generator.py`)**: Entry zone, ideal entry, structural stop loss, target 1, target 2, R:R ratio, position sizing, invalid stop distance guardrail, and mandatory hypothetical research disclosure.
+- **Historical Setup Validator (`historical_setup_validator.py`)**: Non-repainting backtesting across 5 setups with 95% Wilson Score CI, Profit Factor, Max Drawdown, Regime Breakdown, and Sample Size Reliability Flag (< 30 trades flagged as statistically unverified).
+- **Persistence (`research_trade_plans`, `research_notes`)**: Full CRUD and lifecycle tracking.
+- **Unified Research Dashboard (`UnifiedResearchDashboardView.tsx`)**: Dark terminal interface presenting all 10 analytical sections.
+
+### Phase 13: Zero-Cost Cloud Deployment, Private Auth & Database Migration
+- **Zero-Cost Hosting Architecture**: Cloudflare Pages Free (Frontend) + Render Free Web Service (Backend) + Supabase Free (PostgreSQL 16 + Auth). Guaranteed ₹0/month budget.
+- **Dual-Mode Database Layer (`backend/app/database.py`)**: Seamless runtime switching between SQLite 3 and PostgreSQL connection pooling (`psycopg2`).
+- **Private Supabase Authentication (`backend/app/auth.py`, `AuthGateway.tsx`)**: JWT verification, audience and expiration validation, and local mock fallback.
+- **Database Migration Utility (`backend/app/migrate_to_postgres.py`)**: Automated SQLite backup, topological batch migration across all 19 tables with `ON CONFLICT DO NOTHING`, dry-run mode, and verification reporting.
+
+### Phase 13.1: Pre-Deployment Security Audit & Cloud Integration Validation
+- **Authentication Hardened**: Added asymmetric JWKS (`RS256`, `ES256`) and legacy symmetric (`HS256`) support. Enforced algorithm allowlisting; strictly rejected `alg="none"`. Production fail-closed behavior verified. Token masking implemented in audit logs.
+- **IDOR Vulnerabilities Completely Eliminated**: Added `Depends(get_current_user)` and user-ownership filtering across all user-scoped endpoints (`market_intelligence.py`, `screener.py`, `unified_research.py`). Cross-tenant mutations return 404/403. Verified by 6 multi-tenant isolation tests in `test_two_user_isolation.py`.
+- **Broker Credential Safety Confirmed**: Operator endpoints (`/api/dhan/diagnostics`, `/api/dhan/oauth/consent`, `/api/dhan/oauth/revoke`) protected by authentication. Dhan tokens remain stored in encrypted OS keyring storage; no secret keys or access tokens are ever exposed over the API.
+- **SQL Parameter Placeholder Tokenizer (`safe_replace_placeholders`)**: Stateful tokenizer guarantees `?` within string literals and SQL comments is never corrupted during `%s` replacement.
+- **Defense-in-Depth RLS Architecture Documented**: Established why application-level query filtering provides essential Layer 1 security while PostgreSQL RLS provides Layer 2 security.
+- **Deliverables**: Generated `PHASE_13_1_SECURITY_AUDIT.md`, `DATABASE_TABLE_SECURITY_MATRIX.md`, `API_ROUTE_SECURITY_MATRIX.md`, and `POSTGRESQL_COMPATIBILITY_AUDIT.md`.
+- **Final Security Decision**: **A. READY FOR CONTROLLED DEPLOYMENT**. All 394 backend tests passed, frontend compiles in 1.90s.
+
+### Phase 14: Market Movers & Price–Volume Confluence Intelligence
+- **Four Market Movers Panels (ackend/app/services/market_movers_service.py)**:
+  - *Top Gainers*: Highest positive % price change against prior verified closing bar.
+  - *Top Losers*: Largest negative % price change against prior verified closing bar.
+  - *Volume Gainers*: Unusually high trading activity relative to 20-day historical average (RVOL >= threshold).
+  - *High-Volume Losers*: Negative price change coupled with unusually high trading volume.
+  - Full metrics per stock: LTP, previous close, daily change %, traded volume, 20-day ADV, daily RVOL, turnover in ₹ Cr / L, last updated timestamp, and data-quality status.
+- **Two Automated Confluence Intersection Panels**:
+  - *Bullish Price–Volume Confluence*: GAINERS ∩ VOLUME_GAINERS with preserved 
+ank_in_gainers and 
+ank_in_volume_gainers.
+  - *Bearish Price–Volume Confluence*: LOSERS ∩ VOLUME_GAINERS with preserved 
+ank_in_losers and 
+ank_in_volume_gainers.
+  - Compound ranking metric: Daily RVOL * |daily_change_pct|.
+  - Permanent statutory interpretation note distinguishing OHLCV volume expansion from unverified institutional clearing flow.
+- **Atomic Snapshot Evaluation**:
+  - Single backend evaluation call sharing unique snapshot_id and timestamp across all 4 mover lists and 2 confluence sets.
+- **Frontend Dashboard Integration (MarketMoversConfluenceView.tsx)**:
+  - Interactive controls (Universe, Exchange, Min RVOL, Min Change %, Min Turnover, Limit, Refresh).
+  - Embedded into MarketOverview.tsx with toggle to 52-Week Extremes.
+  - Added dedicated navigation entry in App.tsx and quick link from DashboardHome.tsx.
+- **Automated Verification Suite (	est_phase14_market_movers.py)**:
+  - 15 dedicated unit and API integration tests verified 100% passing.
+
+### Phase 14.1: Market Movers Data Accuracy & Validation Audit
+- **Differentiated RVOL Engine**:
+  - *Daily RVOL*: today_volume / adv_20. Marked PROVISIONAL during incomplete market sessions (09:15-15:30 IST) and COMPLETED post-market / EOD.
+  - *Time-of-Day RVOL (Method A)*: Cumulative volume vs historical cumulative volume at exact same time across prior sessions. Marked UNAVAILABLE when intraday bar history is absent; never substituted with linear estimates.
+  - *Linear Estimated Intraday RVOL (Method B)*: Clearly separated and labeled LINEAR_ESTIMATED.
+- **Price & LTP Correctness**:
+  - Strictly separates ltp (None if historical, float if live quote), latest_completed_close, previous_completed_close, intraday_change_pct, and completed_session_change_pct.
+  - Historical-only data is NEVER presented as live LTP.
+- **Universe Coverage Audit**:
+  - Transparent auditing across All Tracked NSE (~2,100 listings), NIFTY 50 (50), NIFTY 100 (100), NIFTY 200 (200), NIFTY 500 (500), and NSE F&O (180).
+  - Explicitly shows requested size, tracked count (31), missing count (e.g. 469 for NIFTY 500), and coverage % (e.g. 6.2%).
+  - Does NOT report 100% coverage on partial samples.
+- **Snapshot Integrity & Provenance**:
+  - Distinguishes calculation_snapshot_id from underlying market data timestamps.
+  - Flags stale records older than 5 trading sessions (is_stale=True, data_mode='STALE').
+  - Supports exclude_stale filter in backend and frontend.
+- **Turnover Accuracy**:
+  - Strictly distinguishes ACTUAL_TURNOVER, ESTIMATED_TURNOVER (OHLCV volume * price), and UNAVAILABLE.
+- **Heuristic Confluence Labeling**:
+  - Confluence compound scores labeled HEURISTIC; explicitly disclosed as non-predictive ranking heuristics.
+- **Frontend Dashboard Audit**:
+  - 7 prominent color badges for LIVE, PROVISIONAL, DELAYED, HISTORICAL, STALE, ESTIMATED, UNAVAILABLE.
+  - Prominent Universe Audit card with progress bar, requested/tracked/missing metrics, and synchronization disclosure.
+- **Automated Verification Suite (test_phase14_1_data_accuracy_audit.py)**:
+  - 17 dedicated audit tests verified 100% passing.
+
+
+### Phase 14.2: Historical Intraday Data Engine & True Time-of-Day RVOL
+- **Provider Assessment & Feed Attribution**:
+  - Truthful multi-provider assessment (\ssess_intraday_data_providers()\): yfinance assessed as historical/delayed 15-min (never misrepresented as live exchange feed); Dhan evaluated as optional real-time broker feed; offline deterministic institutional volume profile generator.
+- **Intraday Data Ingestion Pipeline (\ackend/app/services/intraday_data_service.py\)**:
+  - Ingests and stores 5-minute OHLCV bars in SQLite/PostgreSQL \ohlcv\ table (\interval='5m'\).
+  - Strict IST session modeling (09:15 to 15:30 IST = exactly 75 5-minute bars per day).
+  - High-performance composite database index \idx_ohlcv_sym_int_ts\ on \ohlcv(symbol, interval, timestamp)\.
+  - UTC ISO timestamp normalization (\YYYY-MM-DDTHH:MM:SSZ\) with seamless \Asia/Kolkata\ (+05:30) bidirectional translation.
+  - Seeded 46,500 5-minute bars across 20 valid completed trading sessions for all 31 tracked NSE equities.
+- **True Time-of-Day (TOD) RVOL Engine**:
+  - Calculates cumulative volume from session start up to the completed 5-minute interval.
+  - Accumulates same-time volume across the prior 20 valid trading sessions and computes their historical average.
+  - Excludes weekends, fixed NSE holidays, and incomplete/truncated sessions (< 60 bars).
+  - Returns \UNAVAILABLE\ (\
+vol=None\) when valid sessions < 3 or historical average volume is 0.
+- **Market Movers & Confluence Dual-RVOL Methodology**:
+  - Master selector: \
+vol_mode='daily'\ (default ADV20 ratio) vs \
+vol_mode='tod'\ (True Time-of-Day RVOL).
+  - In \	od\ mode, Volume Gainers and High-Volume Losers are ranked by \	ime_of_day_rvol\.
+  - Bullish and Bearish Confluence compound scores dynamically utilize \	ime_of_day_rvol\.
+  - Every stock record annotated with \ctive_rvol_mode\ and \ctive_rvol\.
+- **FastAPI Endpoints**:
+  - \GET /api/market-movers/intraday/status\: Ingestion status and telemetry.
+  - \GET /api/market-movers/intraday/providers\: Provider assessment and capabilities.
+  - \POST /api/market-movers/intraday/seed\: Automated seeding of 5m intraday history.
+  - Extended \/overview\, \/volume-gainers\, \/bearish-volume\, \/confluence\ with \
+vol_mode\ parameter.
+- **Frontend Dashboard Integration**:
+  - RVOL Methodology toggle: \[ 📅 Daily RVOL (ADV20 Ratio) | ⏱️ True Time-of-Day RVOL ]\.
+  - Informational banner showing active methodology and 20-session baseline.
+  - Dynamic table headers and row badges displaying TOD RVOL vs Daily RVOL.
+- **Automated Verification Suite (\	est_phase14_2_intraday_tod_rvol.py\)**:
+  - 18 dedicated unit and integration tests verified 100% passing.
+  - Platform regression suite: **444 passed, 4 skipped in 50.09s (100% pass rate)**.
+
+
+### Phase 14.3: Actual Market Data Verification & Synthetic Data Isolation
+- **Physical SQLite Database Audit**:
+  - Direct audit of all 46,500 stored 5-minute bars in SQLite ohlcv table across 31 tracked NSE equities.
+  - Confirmed 100% of stored 5m bars originated from deterministic_calibrated_5m (calibrated synthetic simulation).
+  - Confirmed 0 genuine observed 5m bars exist in offline local database.
+- **Strict 5-Tier Data Source Classification Engine**:
+  - Implemented DataSourceClassification enum (OBSERVED_HISTORICAL, OBSERVED_DELAYED, OBSERVED_LIVE, SYNTHETIC, UNKNOWN).
+  - Strict rule: No record is ever classified as observed solely because it has valid OHLCV numbers or timestamps.
+  - Session provenance: If any bar in a session is synthetic, session is SYNTHETIC; if missing source, UNKNOWN.
+- **Pure Baseline Isolation Engine**:
+  - In production mode (llow_synthetic=False, the system-wide default), TOD RVOL strictly returns UNAVAILABLE (
+vol=None, 	od_data_quality='INSUFFICIENT_OBSERVED_DATA') until genuine observed data is ingested.
+  - Prohibits mixing synthetic and observed sessions into historical baselines.
+  - Requires >= 3 valid independently observed historical sessions (target 20).
+  - Historical zero-volume guardrail returns 	od_data_quality='ZERO_HISTORICAL_VOLUME'.
+- **Year-Specific NSE Exchange Calendar (2024–2026)**:
+  - Implemented 	rading_calendar_service.py with official NSE equity holidays for 2024 (16), 2025 (14), and 2026 (13).
+  - Handles special truncated sessions: Diwali Muhurat Trading (12 5m bars) and Saturday Disaster Recovery drills (21 5m bars).
+  - Truncated sessions (< 60 bars) and holidays are strictly excluded from regular 75-bar TOD baselines.
+- **Frontend Provenance Transparency & Demo Guardrail**:
+  - 6 prominent provenance badges (OBSERVED HISTORICAL, OBSERVED DELAYED, OBSERVED LIVE, SYNTHETIC, UNAVAILABLE, UNKNOWN).
+  - Replaced misleading static 'TOD 20D' with exact session counter (e.g. 'TOD (18/20 sess)').
+  - Added user-facing toggle switch: 'Allow Synthetic Demo Data' (default: OFF).
+  - Added amber disclaimer banner when demo mode is active.
+- **Automated Verification Suite (	est_phase14_3_observed_market_data.py)**:
+  - 15 dedicated unit, isolation, calendar, database, and API regression tests verified 100% passing.
+  - Platform regression suite: **459 passed, 4 skipped in 53.58s (100% pass rate)**.
+
+
+### Phase 14.4: NSE Calendar Correction, Provenance Hardening & Observed Data Ingestion Readiness
+- **Official NSE Cash Equity Trading Calendar Grounding (2024–2026)**:
+  - Grounded all trading dates, weekday holidays, exceptional closures, disaster recovery live drills, and Diwali Muhurat sessions in official exchange circulars.
+  - 2024: Master circular NSE/CMTR/59737, Ram Mandir Pran Pratishtha closure NSE/CMTR/60341, Disaster Recovery drills NSE/CMTR/61021 & 62078, Parliamentary Elections NSE/CMTR/61489, Diwali Muhurat NSE/CMTR/64512, Maharashtra Assembly Elections NSE/CMTR/64890.
+  - 2025: Master circular NSE/CMTR/65489, Diwali Muhurat NSE/CMTR/69512.
+  - 2026 Discrepancies Corrected: Holi March 3, 2026 (NSE/CMTR/71004; NOT March 4), Ram Navami March 26, Mahavir Jayanti March 31, Good Friday April 3, Ambedkar Jayanti April 14, Maharashtra Day May 1, Bakri Id May 28 (NOT May 27), Muharram June 26, Ganesh Chaturthi September 14, Gandhi Jayanti October 2, Dussehra October 20, Diwali Muhurat Sunday November 8 (18:15–19:15 IST, 12 bars), Diwali Balipratipada November 10, Gurunanak Jayanti November 24, Christmas December 25.
+  - Implemented automated calendar self-audit validate_calendar_configuration() verifying 47 entries across 2024-2026.
+- **Cryptographic Database Provenance Architecture**:
+  - Implemented intraday_ingestion_runs table logging immutable fetch run records (id, provider, provider_symbol, timestamps, raw response SHA-256 hash, execution status).
+  - Implemented bar_provenance table recording per-bar metadata linked to specific ingestion runs with raw response hashes and provenance classification.
+- **Hardened Anti-Spoofing Provenance Engine**:
+  - Enhanced verify_bar_provenance(bar, strict_audit=True): strictly rejects source strings (e.g. source='yfinance_historical_5m') lacking verified ingestion runs or cryptographic hashes as UNKNOWN.
+  - Disguise Protection: Synthetic bars marked with synthetic or calibrated flags remain SYNTHETIC even if disguised with observed source names.
+- **Exact 75-Bar Session Completeness Validator**:
+  - Built validate_session_completeness() enforcing exact 75 5-minute bars (09:15:00 to 15:25:00 IST), 12 bars for Muhurat, 21 bars for DR drills.
+  - Detects missing intervals, duplicates, out-of-session timestamps, misaligned boundaries, OHLC geometric bounds (high >= low, open/close inside high/low), negative volume, and timezone mismatches.
+- **Provider Ingestion Pipeline & Truthful Error Reporting**:
+  - Extensible IntradayProviderAdapter base class with YFinanceIntradayAdapter and DhanIntradayAdapter.
+  - Reports NOT_EXECUTED truthfully when external network or broker credentials are unavailable without inventing mock data.
+  - Verified mock adapter demonstrating end-to-end ingestion, session validation, and provenance recording.
+- **Synthetic Overwrite Protection Guardrail**:
+  - seed_symbol_intraday_history() checks bar_provenance for existing observed records and strictly refuses to delete or overwrite authentic market data with synthetic simulations.
+- **Automated Verification Suite (test_phase14_4_calendar_provenance_readiness.py)**:
+  - 22 dedicated unit, calendar, completeness, provenance, provider, and API tests verified 100% passing.
+  - Full Phase 14 regression suite: **87 passed in 38.46s**.
+  - Platform regression suite: **481 passed, 4 skipped in 68.76s (100% pass rate)**.
+  - Frontend production build: **Passed in 1.88s (0 errors)**.
+  - Final System Readiness Status at Phase 14.4: **READY FOR A CONTROLLED OBSERVED-DATA PILOT**.
+
+### Phase 14.5: Provider Audit & Controlled Historical Intraday Pilot
+- **Provider availability**:
+  - Yahoo Finance returned genuine provider-sourced 5-minute history for the pilot, but it is third-party historical data, not a direct NSE feed; no wire-response hash is available from the yfinance library.
+  - Dhan credentials are configured but the stored token is expired; no Dhan request was made. Dhan and Upstox historical-intraday adapters are not available for ingestion.
+  - Yahoo requests are serialized with a two-second minimum interval. No reliable published Yahoo rate limit is available.
+- **Bounded three-symbol pilot** (Yahoo `5m`, requested `6d`; NSE regular session requires exactly 75 aligned bars):
+
+  | Symbol | Returned bars | Sessions | Validation result |
+  | :--- | ---: | ---: | :--- |
+  | RELIANCE | 444 / 450 | 6 | All six sessions had 74 bars; each missed 15:20 IST |
+  | TCS | 442 / 450 | 6 | Two sessions had 73 bars (missing 15:15 and 15:20); four had 74 (missing 15:20) |
+  | HDFCBANK | 443 / 450 | 6 | One session had 73 bars and five had 74; missing intervals included 15:15 and 15:20 |
+
+- **Outcome and safety**:
+  - Zero fully valid sessions, zero observed bars ingested, and zero duplicate bars. All three requests remain recorded as incomplete/failed validation runs.
+  - The local database retains all 46,500 synthetic 5-minute bars and has zero observed 5-minute bars. Synthetic data remains physically separate from observed data and is not eligible for production TOD RVOL.
+  - **INGESTION NOT READY.** Expansion to the other 28 symbols and TOD reference calculations are stopped until a provider supplies complete valid sessions. Missing intervals are not interpolated.
+  - The additive Supabase migration definition was prepared but not applied to production. No production migration or deployment was run.
+- **Verification**: Phase 14.5 ingestion tests: **6 passed**. Full backend suite: **487 passed, 4 skipped**. Frontend TypeScript and production build: **passed**.

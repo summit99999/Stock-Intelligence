@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect } from "react";
 
 interface SwingPivot {
@@ -163,7 +164,7 @@ export default function SmartMoneyConceptsView({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/smc/analysis/${sym.toUpperCase()}?limit=120`);
+      const res = await apiFetch(`/api/smc/analysis/${sym.toUpperCase()}?limit=120`);
       if (!res.ok) {
         throw new Error(`Failed to load SMC analysis for ${sym}`);
       }

@@ -9,7 +9,7 @@
  *   - Sortable, paginated results table
  *   - CSV export, save/load screening strategies
  *
- * All data is demo/illustrative and clearly labelled.
+ * Results are rendered only when returned by the backend with a non-demo source.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -479,7 +479,9 @@ export default function StockScreener({ onOpenResearch }: StockScreenerProps = {
           </>
         ) : (
           <>
-            DEMONSTRATION DATA — All figures are illustrative. Not current exchange prices.
+            {dataStatus
+              ? `No historical market bars are currently available (${dataStatus.stocks_with_data}/${dataStatus.total_stocks} stocks covered). Demo results are hidden.`
+              : "Market data coverage could not be verified. Demo results are hidden until the backend reports an available source."}
             {dataStatus?.provider_available && (
               <button
                 className="scr-btn scr-btn-ghost"
@@ -802,7 +804,7 @@ export default function StockScreener({ onOpenResearch }: StockScreenerProps = {
             </div>
           )}
 
-          {response && (
+          {response && response.data_mode.toLowerCase() !== "demo" && (
             <>
               <div className="results-header">
                 <span className="results-count">
@@ -932,6 +934,14 @@ export default function StockScreener({ onOpenResearch }: StockScreenerProps = {
             </>
           )}
 
+          {response && response.data_mode.toLowerCase() === "demo" && (
+            <div className="screener-empty">
+              <div className="screener-empty-icon">&#x2315;</div>
+              <h3>Screen results unavailable</h3>
+              <p>{response.notice || "The backend returned illustrative demo data. It is hidden to avoid presenting it as market research."}</p>
+            </div>
+          )}
+
           {!response && !loading && !error && (
             <div className="screener-empty">
               <div className="screener-empty-icon">&#x2315;</div>
@@ -953,9 +963,9 @@ export default function StockScreener({ onOpenResearch }: StockScreenerProps = {
         <span>STOCK SCREENER</span>
         <span>
           {dataStatus && dataStatus.stocks_with_data > 0
-            ? `Historical data · ${dataStatus.provider_name ?? "Yahoo Finance"} · Not live prices`
-            : "Illustrative sample data · Not live market data"}
-          {" · "}{response?.total ?? 0} results
+            ? `Historical data · ${dataStatus.provider_name ?? "Provider unavailable"} · Not live prices`
+            : "Coverage unavailable or empty · Demo results hidden"}
+          {" · "}{response?.data_mode.toLowerCase() === "demo" ? "No verified results" : `${response?.total ?? 0} results`}
         </span>
       </footer>
 

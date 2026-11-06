@@ -1,11 +1,10 @@
 /** API client for the Stock Screener backend. */
 
 import type { ScreenRequest, ScreenResponse, ScreenerMetadata, SavedScreener } from "../types/screener";
-
-const API_BASE = "http://127.0.0.1:8000";
+import { apiFetch as baseApiFetch } from "./client";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await baseApiFetch(path, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
@@ -34,7 +33,7 @@ export async function getScreenerMetadata(): Promise<ScreenerMetadata> {
 /** Export results as CSV — returns a downloadable blob. */
 export async function exportCSV(request: ScreenRequest): Promise<void> {
   const body = cleanRequest(request);
-  const res = await fetch(`${API_BASE}/api/screener/export-csv`, {
+  const res = await baseApiFetch("/api/screener/export-csv", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

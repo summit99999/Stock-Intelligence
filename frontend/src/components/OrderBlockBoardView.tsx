@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect } from "react";
 
 interface OrderBlock {
@@ -65,7 +66,7 @@ export default function OrderBlockBoardView({ onSelectSymbol, onNavigate }: Orde
       const results: StockOBData[] = [];
       for (const sym of DEFAULT_SYMBOLS) {
         try {
-          const res = await fetch(`http://127.0.0.1:8000/api/smc/analysis/${sym}?limit=120`);
+          const res = await apiFetch(`/api/smc/analysis/${sym}?limit=120`);
           if (res.ok) {
             const json = await res.json();
             if (!json.error) {

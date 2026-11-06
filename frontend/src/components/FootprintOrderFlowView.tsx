@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect, useMemo } from "react";
 
 interface FootprintOrderFlowViewProps {
@@ -19,7 +20,7 @@ export default function FootprintOrderFlowView({
     let cancelled = false;
     setLoading(true);
 
-    fetch(`http://127.0.0.1:8000/api/stocks/${symbol}/history?limit=40`)
+    apiFetch(`/api/stocks/${symbol}/history?limit=40`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled && data && data.bars) {

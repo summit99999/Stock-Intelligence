@@ -7,8 +7,10 @@ import io
 import json
 import math
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+
+from app.auth import get_current_user
 
 from app.database import (
     delete_saved_screener,
@@ -166,35 +168,44 @@ def screener_metadata():
 
 
 @router.get("/presets", response_model=list[SavedScreenerResponse])
-def get_presets():
-    """List saved screener presets."""
-    return list_saved_screeners()
+def get_presets(current_user: dict = Depends(get_current_user)):
+    """List saved screener presets for authenticated user."""
+    return list_saved_screeners(user_id=current_user["id"])
 
 
 @router.post("/presets", response_model=SavedScreenerResponse)
-def create_preset(req: SaveScreenerRequest):
+def create_preset(
+    req: SaveScreenerRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Save a screener preset."""
     config_json = req.config.model_dump_json()
-    row_id = save_screener(req.name, req.description, config_json)
-    saved = get_saved_screener(row_id)
+    row_id = save_screener(req.name, req.description, config_json, user_id=current_user["id"])
+    saved = get_saved_screener(row_id, user_id=current_user["id"])
     if not saved:
         raise HTTPException(status_code=500, detail="Failed to save screener")
     return saved
 
 
 @router.get("/presets/{preset_id}", response_model=SavedScreenerResponse)
-def get_preset(preset_id: int):
-    """Get a single saved preset."""
-    saved = get_saved_screener(preset_id)
+def get_preset(
+    preset_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get a single saved preset for authenticated user."""
+    saved = get_saved_screener(preset_id, user_id=current_user["id"])
     if not saved:
         raise HTTPException(status_code=404, detail="Preset not found")
     return saved
 
 
 @router.delete("/presets/{preset_id}")
-def remove_preset(preset_id: int):
+def remove_preset(
+    preset_id: int,
+    current_user: dict = Depends(get_current_user),
+):
     """Delete a saved preset."""
-    if not delete_saved_screener(preset_id):
+    if not delete_saved_screener(preset_id, user_id=current_user["id"]):
         raise HTTPException(status_code=404, detail="Preset not found")
     return {"status": "deleted"}
 

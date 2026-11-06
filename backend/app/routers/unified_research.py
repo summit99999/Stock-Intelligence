@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from app.auth import get_current_user
 
 from app.database import (
     delete_research_note,
@@ -336,12 +338,15 @@ def validate_setup_endpoint(req: HistoricalValidationRequest):
 # ---------------------------------------------------------------------------
 
 @router.post("/trade-plans/save")
-def save_trade_plan_endpoint(payload: SaveTradePlanPayload):
+def save_trade_plan_endpoint(
+    payload: SaveTradePlanPayload,
+    current_user: dict = Depends(get_current_user),
+):
     """
-    Save research trade plan to database.
+    Save research trade plan to database for authenticated user.
     """
     try:
-        return save_research_trade_plan(payload.model_dump())
+        return save_research_trade_plan(payload.model_dump(), user_id=current_user["id"])
     except Exception as e:
         logger.exception("Error saving trade plan: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -351,46 +356,57 @@ def save_trade_plan_endpoint(payload: SaveTradePlanPayload):
 def list_trade_plans_endpoint(
     symbol: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    List saved research trade plans.
+    List saved research trade plans for authenticated user.
     """
     try:
-        return list_research_trade_plans(symbol=symbol, status=status)
+        return list_research_trade_plans(symbol=symbol, status=status, user_id=current_user["id"])
     except Exception as e:
         logger.exception("Error listing trade plans: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/trade-plans/{plan_id}")
-def get_trade_plan_endpoint(plan_id: int):
+def get_trade_plan_endpoint(
+    plan_id: int,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get a single research trade plan by ID.
     """
-    plan = get_research_trade_plan(plan_id)
+    plan = get_research_trade_plan(plan_id, user_id=current_user["id"])
     if not plan:
         raise HTTPException(status_code=404, detail=f"Trade plan #{plan_id} not found.")
     return plan
 
 
 @router.put("/trade-plans/{plan_id}")
-def update_trade_plan_endpoint(plan_id: int, payload: UpdateTradePlanPayload):
+def update_trade_plan_endpoint(
+    plan_id: int,
+    payload: UpdateTradePlanPayload,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Update status or notes on a saved trade plan.
     """
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
-    res = update_research_trade_plan(plan_id, updates)
+    res = update_research_trade_plan(plan_id, updates, user_id=current_user["id"])
     if not res:
         raise HTTPException(status_code=404, detail=f"Trade plan #{plan_id} not found or no updates applied.")
     return res
 
 
 @router.delete("/trade-plans/{plan_id}")
-def delete_trade_plan_endpoint(plan_id: int):
+def delete_trade_plan_endpoint(
+    plan_id: int,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Delete a saved research trade plan.
     """
-    deleted = delete_research_trade_plan(plan_id)
+    deleted = delete_research_trade_plan(plan_id, user_id=current_user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Trade plan #{plan_id} not found.")
     return {"status": "SUCCESS", "deleted_id": plan_id}
@@ -401,7 +417,10 @@ def delete_trade_plan_endpoint(plan_id: int):
 # ---------------------------------------------------------------------------
 
 @router.post("/notes")
-def save_research_note_endpoint(payload: ResearchNotePayload):
+def save_research_note_endpoint(
+    payload: ResearchNotePayload,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Save qualitative research note for a stock.
     """
@@ -411,6 +430,7 @@ def save_research_note_endpoint(payload: ResearchNotePayload):
             note=payload.note,
             title=payload.title,
             tags=payload.tags,
+            user_id=current_user["id"],
         )
     except Exception as e:
         logger.exception("Error saving note: %s", e)
@@ -418,23 +438,29 @@ def save_research_note_endpoint(payload: ResearchNotePayload):
 
 
 @router.get("/notes/{symbol}")
-def list_research_notes_endpoint(symbol: str):
+def list_research_notes_endpoint(
+    symbol: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     List research notes for a stock.
     """
     try:
-        return list_research_notes(symbol=symbol)
+        return list_research_notes(symbol=symbol, user_id=current_user["id"])
     except Exception as e:
         logger.exception("Error listing notes: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/notes/{note_id}")
-def delete_research_note_endpoint(note_id: int):
+def delete_research_note_endpoint(
+    note_id: int,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Delete a research note by ID.
     """
-    deleted = delete_research_note(note_id)
+    deleted = delete_research_note(note_id, user_id=current_user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Research note #{note_id} not found.")
     return {"status": "SUCCESS", "deleted_id": note_id}

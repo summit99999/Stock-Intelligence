@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from app.auth import get_current_user
 from app.config import get_dhan_config, get_dhan_credential_diagnostics
 from app.schemas.dhan import (
     CallbackRequest,
@@ -69,7 +70,7 @@ def dhan_status():
 # ---------------------------------------------------------------------------
 
 @router.get("/diagnostics")
-def dhan_diagnostics() -> dict[str, bool]:
+def dhan_diagnostics(current_user: dict = Depends(get_current_user)) -> dict[str, bool]:
     """
     Safe credential-presence diagnostic.
     Returns only True/False for each required credential key.
@@ -83,7 +84,7 @@ def dhan_diagnostics() -> dict[str, bool]:
 # ---------------------------------------------------------------------------
 
 @router.post("/oauth/consent", response_model=ConsentResponse)
-async def oauth_consent():
+async def oauth_consent(current_user: dict = Depends(get_current_user)):
     """
     Step 1 of Dhan OAuth.
 
@@ -241,7 +242,7 @@ async def verify_profile():
 # ---------------------------------------------------------------------------
 
 @router.post("/oauth/revoke", response_model=RevokeResponse)
-def oauth_revoke():
+def oauth_revoke(current_user: dict = Depends(get_current_user)):
     """Clear the stored Dhan access token from keyring."""
     deleted = token_store.delete_token()
 

@@ -7,11 +7,10 @@ import type {
   QualityScoreResult,
   ScreenerCsvImportResponse,
 } from "../types/fundamentals";
-
-const API_BASE = "http://127.0.0.1:8000";
+import { apiFetch as baseApiFetch } from "./client";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await baseApiFetch(path, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
@@ -64,14 +63,14 @@ export async function importScreenerCsv(
   symbol?: string,
   overwriteVerified = false
 ): Promise<ScreenerCsvImportResponse> {
-  let url = `${API_BASE}/api/fundamentals/import/screener-csv?overwrite_verified=${overwriteVerified}`;
+  let path = `/api/fundamentals/import/screener-csv?overwrite_verified=${overwriteVerified}`;
   if (symbol) {
-    url += `&symbol=${encodeURIComponent(symbol.toUpperCase())}`;
+    path += `&symbol=${encodeURIComponent(symbol.toUpperCase())}`;
   }
 
   let res: Response;
   if (typeof fileOrContent === "string") {
-    res = await fetch(url, {
+    res = await baseApiFetch(path, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: fileOrContent,
@@ -81,7 +80,7 @@ export async function importScreenerCsv(
     formData.append("file", fileOrContent);
     if (symbol) formData.append("symbol", symbol.toUpperCase());
     formData.append("overwrite_verified", String(overwriteVerified));
-    res = await fetch(url, {
+    res = await baseApiFetch(path, {
       method: "POST",
       body: formData,
     });

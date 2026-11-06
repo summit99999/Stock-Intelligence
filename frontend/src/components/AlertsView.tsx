@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState, useEffect } from "react";
 import { LiveQuote } from "../api/marketFeed";
 
@@ -36,6 +37,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
   const [history, setHistory] = useState<TriggeredEvent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Form State
   const [symbol, setSymbol] = useState("RELIANCE");
@@ -46,25 +48,25 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
 
   const loadAlerts = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/alerts");
-      if (res.ok) {
-        const data = await res.json();
-        setAlerts(data);
-      }
+      const res = await apiFetch("/api/alerts");
+      if (!res.ok) throw new Error(`Alert rules API returned HTTP ${res.status}.`);
+      const data = await res.json();
+      setAlerts(data);
     } catch (err) {
       console.error(err);
+      setLoadError(err instanceof Error ? err.message : "Alert rules are unavailable.");
     }
   };
 
   const loadHistory = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/alerts/history?limit=50");
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data);
-      }
+      const res = await apiFetch("/api/alerts/history?limit=50");
+      if (!res.ok) throw new Error(`Alert history API returned HTTP ${res.status}.`);
+      const data = await res.json();
+      setHistory(data);
     } catch (err) {
       console.error(err);
+      setLoadError(err instanceof Error ? err.message : "Alert history is unavailable.");
     }
   };
 
@@ -85,7 +87,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
     if (!sym) return;
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/alerts", {
+      const res = await apiFetch("/api/alerts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -108,7 +110,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
   const handleToggleStatus = async (rule: AlertRule) => {
     const nextStatus = rule.status === "ACTIVE" ? "MUTED" : "ACTIVE";
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/alerts/${rule.id}`, {
+      const res = await apiFetch(`/api/alerts/${rule.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),
@@ -123,7 +125,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
 
   const handleDelete = async (id: number) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/alerts/${id}`, {
+      const res = await apiFetch(`/api/alerts/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -137,7 +139,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
   const handleEvaluateRules = async () => {
     setEvaluating(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/alerts/evaluate", {
+      const res = await apiFetch("/api/alerts/evaluate", {
         method: "POST",
       });
       if (res.ok) {
@@ -156,7 +158,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
     const ok = confirm("Clear all alert trigger history?");
     if (!ok) return;
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/alerts/history", {
+      const res = await apiFetch("/api/alerts/history", {
         method: "DELETE",
       });
       if (res.ok) {
@@ -174,6 +176,11 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {loadError && (
+        <div className="notice" role="status">
+          Alert data unavailable: {loadError} No alert data is being substituted.
+        </div>
+      )}
       {/* Top Banner & Control Bar */}
       <div
         style={{
@@ -394,7 +401,7 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", overflowY: "auto", maxHeight: "380px" }}>
             {filteredAlerts.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>
-                No alert rules match this status filter.
+                {loadError ? "Alert rules could not be loaded from the server." : "No alert rules match this status filter."}
               </div>
             ) : (
               filteredAlerts.map((alert) => (
@@ -529,7 +536,9 @@ export default function AlertsView({ onSelectSymbol, onNavigate, liveQuotes = {}
               {history.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
-                    No alert trigger history logged yet. Click "⚡ Evaluate Rules Now" to test active rules.
+                    {loadError
+                      ? "Alert history could not be loaded from the server."
+                      : 'No alert trigger history logged yet. Click "⚡ Evaluate Rules Now" to test active rules.'}
                   </td>
                 </tr>
               ) : (

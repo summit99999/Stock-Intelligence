@@ -1,24 +1,375 @@
 """
 Database layer for Stock Intelligence.
-SQLite with a design that can migrate to PostgreSQL later.
+Supports dual-mode execution:
+1. SQLite (default local mode)
+2. PostgreSQL (Supabase / Render cloud deployment)
 Sample data is seeded only if no data exists yet; real data takes priority.
 """
 
+from __future__ import annotations
+
+import logging
+import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "stock_intelligence.db"
 
+# PostgreSQL / Supabase connection URL
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+
+
+def is_postgres() -> bool:
+    """Return True if PostgreSQL database URL is configured."""
+    return bool(DATABASE_URL and DATABASE_URL.startswith("postgresql://"))
+
+
+def get_database_mode() -> str:
+    """Return current active database engine name."""
+    return "postgresql" if is_postgres() else "sqlite"
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL Query & Row Adapters
+# ---------------------------------------------------------------------------
+
+class DbRow(dict):
+    """
+    Dictionary row subclass that supports both string key access (row['symbol']),
+    dictionary conversion (dict(row)), and 0-based integer indexing (row[0]).
+    Ensures identical compatibility across SQLite and PostgreSQL query consumers.
+    """
+    def __init__(self, data: Dict[str, Any], keys_list: Sequence[str]):
+        super().__init__(data)
+        self._keys_list = list(keys_list)
+
+    def __getitem__(self, key: Union[str, int]) -> Any:
+        if isinstance(key, int):
+            return super().__getitem__(self._keys_list[key])
+        return super().__getitem__(key)
+
+
+TABLE_PK_MAP: Dict[str, Tuple[List[str], List[str]]] = {
+    "stocks": (["symbol"], [
+        "company_name", "exchange", "sector", "industry", "cap_category", "isin",
+        "close", "daily_change_pct", "week_52_high", "week_52_low",
+        "market_cap_cr", "pe", "pb", "roe", "roce", "debt_equity",
+        "revenue_growth_pct", "profit_growth_pct", "opm_pct", "free_cash_flow_cr",
+        "promoter_holding", "promoter_pledging", "fii_holding", "dii_holding",
+        "rsi", "macd", "macd_signal", "adx", "supertrend", "supertrend_dir",
+        "ema_20", "ema_50", "ema_100", "ema_200",
+        "sma_20", "sma_50", "sma_100", "sma_200",
+        "volume", "relative_volume",
+        "return_1d_pct", "return_1w_pct", "return_1m_pct", "return_3m_pct", "return_6m_pct", "return_1y_pct",
+        "data_source", "updated_at"
+    ]),
+    "ohlcv": (["symbol", "interval", "timestamp"], [
+        "open", "high", "low", "close", "adj_close", "volume", "source"
+    ]),
+    "fundamental_company_profiles": (["isin", "source"], [
+        "symbol", "company_name", "industry", "sector", "exchange", "face_value",
+        "market_cap_cr", "year_of_incorporation", "bse_code", "nse_code", "website",
+        "description", "fetched_at"
+    ]),
+    "fundamental_income_statements": (["isin", "period", "statement_type", "frequency", "source"], [
+        "symbol", "revenue_cr", "other_income_cr", "cost_of_revenue_cr", "gross_profit_cr",
+        "operating_expenses_cr", "operating_profit_cr", "ebitda_cr", "depreciation_cr",
+        "ebit_cr", "interest_expense_cr", "profit_before_tax_cr", "tax_expense_cr",
+        "net_profit_cr", "eps", "diluted_eps", "period_end_date", "verification_status",
+        "raw_data", "fetched_at"
+    ]),
+    "fundamental_balance_sheets": (["isin", "period", "statement_type", "frequency", "source"], [
+        "symbol", "total_assets_cr", "current_assets_cr", "non_current_assets_cr",
+        "total_liabilities_cr", "current_liabilities_cr", "non_current_liabilities_cr",
+        "total_equity_cr", "share_capital_cr", "reserves_cr", "borrowings_cr",
+        "period_end_date", "verification_status", "raw_data", "fetched_at"
+    ]),
+    "fundamental_cash_flows": (["isin", "period", "statement_type", "frequency", "source"], [
+        "symbol", "operating_cf_cr", "investing_cf_cr", "financing_cf_cr",
+        "net_cf_cr", "capital_expenditure_cr", "free_cash_flow_cr",
+        "period_end_date", "verification_status", "raw_data", "fetched_at"
+    ]),
+    "fundamental_ratios": (["isin", "period", "statement_type", "frequency", "source"], [
+        "symbol", "pe_ratio", "pb_ratio", "ev_ebitda", "roe_pct", "roce_pct",
+        "debt_to_equity", "interest_coverage", "current_ratio", "quick_ratio",
+        "dividend_yield", "opm_pct", "npm_pct", "asset_turnover", "inventory_turnover",
+        "period_end_date", "verification_status", "raw_data", "fetched_at"
+    ]),
+    "fundamental_shareholdings": (["isin", "period", "source"], [
+        "symbol", "promoter_pct", "promoter_pledged_pct", "fii_pct", "dii_pct",
+        "public_pct", "government_pct", "other_pct", "total_shareholders",
+        "period_end_date", "verification_status", "raw_data", "fetched_at"
+    ]),
+    "fundamental_corporate_actions": (["isin", "action_type", "ex_date", "source"], [
+        "symbol", "record_date", "ratio", "amount", "description", "fetched_at"
+    ]),
+    "fundamental_competitors": (["isin", "peer_symbol", "source"], [
+        "symbol", "peer_name", "market_cap_cr", "pe_ratio", "roe_pct", "fetched_at"
+    ]),
+    "intraday_ingestion_runs": (["id"], [
+        "symbol", "provider", "provider_symbol", "exchange", "segment", "interval",
+        "start_date", "end_date", "bar_count", "retrieval_timestamp", "raw_response_hash",
+        "transformation_version", "provenance_classification", "data_quality_status",
+        "error_message", "created_at", "actual_start_date", "actual_end_date",
+        "provider_metadata_json", "session_quality_json"
+    ]),
+    "bar_provenance": (["symbol", "interval", "timestamp"], [
+        "provider", "provider_symbol", "exchange", "segment", "retrieval_timestamp",
+        "ingestion_run_id", "raw_response_hash", "transformation_version",
+        "provenance_classification", "data_quality_status"
+    ]),
+    "observed_intraday_ohlcv": (["symbol", "interval", "timestamp"], [
+        "provider_timestamp", "open", "high", "low", "close", "adj_close", "volume",
+        "source", "provider", "provider_symbol", "exchange", "retrieval_timestamp",
+        "ingestion_run_id", "raw_response_hash", "provenance_classification",
+        "data_quality_status"
+    ]),
+}
+
+AUTO_INCREMENT_TABLES = {
+    "saved_screeners", "saved_custom_scanners", "custom_watchlists",
+    "market_alerts", "market_alert_history", "research_trade_plans", "research_notes"
+}
+
+
+def safe_replace_placeholders(sql: str) -> str:
+    """
+    Safely replace parameter placeholder '?' with '%s' in SQL statements,
+    ignoring '?' that appears inside:
+    - single-quoted string literals: 'text with ?'
+    - double-quoted identifier literals: "col ? name"
+    - single-line SQL comments: -- comment with ?
+    - multi-line block comments: /* comment with ? */
+    """
+    res = []
+    i = 0
+    n = len(sql)
+    in_single_quote = False
+    in_double_quote = False
+    in_line_comment = False
+    in_block_comment = False
+
+    while i < n:
+        c = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+
+        if in_single_quote:
+            res.append(c)
+            if c == "'":
+                if nxt == "'":  # escaped single quote ''
+                    res.append(nxt)
+                    i += 1
+                else:
+                    in_single_quote = False
+        elif in_double_quote:
+            res.append(c)
+            if c == '"':
+                if nxt == '"':  # escaped double quote ""
+                    res.append(nxt)
+                    i += 1
+                else:
+                    in_double_quote = False
+        elif in_line_comment:
+            res.append(c)
+            if c == "\n":
+                in_line_comment = False
+        elif in_block_comment:
+            res.append(c)
+            if c == "*" and nxt == "/":
+                res.append(nxt)
+                i += 1
+                in_block_comment = False
+        else:
+            if c == "-" and nxt == "-":
+                in_line_comment = True
+                res.append(c)
+                res.append(nxt)
+                i += 1
+            elif c == "/" and nxt == "*":
+                in_block_comment = True
+                res.append(c)
+                res.append(nxt)
+                i += 1
+            elif c == "'":
+                in_single_quote = True
+                res.append(c)
+            elif c == '"':
+                in_double_quote = True
+                res.append(c)
+            elif c == "?":
+                res.append("%s")
+            else:
+                res.append(c)
+        i += 1
+
+    return "".join(res)
+
+
+def adapt_sql_for_postgres(sql: str) -> Tuple[str, bool]:
+    """
+    Translates an SQLite query to a PostgreSQL compatible query:
+    1. Replaces ? parameter placeholders with %s safely (ignoring literals/comments).
+    2. Replaces datetime('now') with NOW().
+    3. Translates INSERT OR REPLACE INTO <table> (<cols>) VALUES (<vals>)
+       to INSERT INTO <table> (<cols>) VALUES (<vals>) ON CONFLICT (<pk>) DO UPDATE SET ...
+    4. Appends RETURNING id for auto-increment tables if not present.
+    Returns: (adapted_sql, should_capture_id)
+    """
+    s = sql.strip()
+    # Replace datetime('now')
+    s = re.sub(r"datetime\s*\(\s*['\"]now['\"]\s*\)", "NOW()", s, flags=re.IGNORECASE)
+
+    # Check for INSERT OR REPLACE
+    m = re.match(r"^INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)", s, flags=re.IGNORECASE)
+    if m:
+        table_name = m.group(1).lower()
+        cols = [c.strip() for c in m.group(2).split(",")]
+        vals = m.group(3)
+        if table_name in TABLE_PK_MAP:
+            pk_cols, _ = TABLE_PK_MAP[table_name]
+            pk_str = ", ".join(pk_cols)
+            cols_to_update = [c for c in cols if c.lower() not in [p.lower() for p in pk_cols]]
+            update_assignments = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols_to_update)
+            s = f"INSERT INTO {m.group(1)} ({m.group(2)}) VALUES ({vals}) ON CONFLICT ({pk_str}) DO UPDATE SET {update_assignments}"
+        else:
+            s = f"INSERT INTO {m.group(1)} ({m.group(2)}) VALUES ({vals})"
+
+    # Check for AUTO_INCREMENT table insert where RETURNING id is needed for cur.lastrowid
+    should_capture_id = False
+    m_insert = re.match(r"^INSERT\s+INTO\s+(\w+)", s, flags=re.IGNORECASE)
+    if m_insert:
+        table_name = m_insert.group(1).lower()
+        if table_name in AUTO_INCREMENT_TABLES and "RETURNING" not in s.upper():
+            s = s.rstrip("; \t\n") + " RETURNING id"
+            should_capture_id = True
+
+    # Safely replace parameter placeholders ? with %s
+    s = safe_replace_placeholders(s)
+    return s, should_capture_id
+
+
+class PostgresCursorWrapper:
+    """Wraps psycopg2 cursor to mirror sqlite3.Cursor semantics."""
+    def __init__(self, raw_cursor: Any):
+        self._cursor = raw_cursor
+        self.lastrowid: Optional[int] = None
+
+    @property
+    def rowcount(self) -> int:
+        return self._cursor.rowcount
+
+    def execute(self, sql: str, params: Any = None) -> PostgresCursorWrapper:
+        adapted_sql, should_capture_id = adapt_sql_for_postgres(sql)
+        params_tuple = tuple(params) if params is not None else None
+        self._cursor.execute(adapted_sql, params_tuple)
+        if should_capture_id:
+            try:
+                row = self._cursor.fetchone()
+                if row:
+                    self.lastrowid = row[0] if isinstance(row, (tuple, list)) else row.get("id")
+            except Exception:
+                pass
+        return self
+
+    def executemany(self, sql: str, params_list: Sequence[Any]) -> PostgresCursorWrapper:
+        adapted_sql, _ = adapt_sql_for_postgres(sql)
+        self._cursor.executemany(adapted_sql, params_list)
+        return self
+
+    def fetchone(self) -> Optional[DbRow]:
+        try:
+            row = self._cursor.fetchone()
+            if row is None:
+                return None
+            if self._cursor.description:
+                col_names = [col.name for col in self._cursor.description]
+                return DbRow(dict(row), col_names)
+            return row
+        except Exception:
+            return None
+
+    def fetchall(self) -> List[DbRow]:
+        try:
+            rows = self._cursor.fetchall()
+            if self._cursor.description:
+                col_names = [col.name for col in self._cursor.description]
+                return [DbRow(dict(r), col_names) for r in rows]
+            return rows
+        except Exception:
+            return []
+
+    def close(self) -> None:
+        self._cursor.close()
+
+
+class PostgresConnectionWrapper:
+    """Wraps psycopg2 connection to mirror sqlite3.Connection semantics and context management."""
+    def __init__(self, raw_conn: Any):
+        self._conn = raw_conn
+
+    def cursor(self) -> PostgresCursorWrapper:
+        import psycopg2.extras
+        return PostgresCursorWrapper(self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+
+    def execute(self, sql: str, params: Any = None) -> PostgresCursorWrapper:
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql: str, params_list: Sequence[Any]) -> PostgresCursorWrapper:
+        cur = self.cursor()
+        cur.executemany(sql, params_list)
+        return cur
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def __enter__(self) -> PostgresConnectionWrapper:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        try:
+            if exc_type is not None:
+                self.rollback()
+            else:
+                self.commit()
+        finally:
+            self.close()
+
 
 def connect():
+    """
+    Connect to the database. Automatically connects to PostgreSQL if DATABASE_URL
+    is configured, otherwise defaults to local SQLite database.
+    """
+    if is_postgres():
+        import psycopg2
+        raw_conn = psycopg2.connect(DATABASE_URL)
+        return PostgresConnectionWrapper(raw_conn)
+
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(DB_PATH))
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     return con
+
 
 
 # ---------------------------------------------------------------------------
@@ -118,9 +469,80 @@ CREATE TABLE IF NOT EXISTS data_updates (
 )
 """
 
+INTRADAY_INGESTION_RUNS_DDL = """
+CREATE TABLE IF NOT EXISTS intraday_ingestion_runs (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_symbol TEXT NOT NULL,
+    exchange TEXT NOT NULL DEFAULT 'NSE',
+    segment TEXT NOT NULL DEFAULT 'EQUITY',
+    interval TEXT NOT NULL DEFAULT '5m',
+    start_date TEXT,
+    end_date TEXT,
+    bar_count INTEGER NOT NULL DEFAULT 0,
+    retrieval_timestamp TEXT NOT NULL,
+    raw_response_hash TEXT,
+    transformation_version TEXT DEFAULT 'v1.0',
+    provenance_classification TEXT NOT NULL,
+    data_quality_status TEXT NOT NULL,
+    error_message TEXT,
+    actual_start_date TEXT,
+    actual_end_date TEXT,
+    provider_metadata_json TEXT,
+    session_quality_json TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+BAR_PROVENANCE_DDL = """
+CREATE TABLE IF NOT EXISTS bar_provenance (
+    symbol TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_symbol TEXT NOT NULL,
+    exchange TEXT NOT NULL DEFAULT 'NSE',
+    segment TEXT NOT NULL DEFAULT 'EQUITY',
+    retrieval_timestamp TEXT NOT NULL,
+    ingestion_run_id TEXT NOT NULL,
+    raw_response_hash TEXT,
+    transformation_version TEXT DEFAULT 'v1.0',
+    provenance_classification TEXT NOT NULL,
+    data_quality_status TEXT NOT NULL,
+    PRIMARY KEY(symbol, interval, timestamp)
+)
+"""
+
+OBSERVED_INTRADAY_OHLCV_DDL = """
+CREATE TABLE IF NOT EXISTS observed_intraday_ohlcv (
+    symbol TEXT NOT NULL,
+    interval TEXT NOT NULL DEFAULT '5m',
+    timestamp TEXT NOT NULL,
+    provider_timestamp TEXT NOT NULL,
+    open REAL NOT NULL,
+    high REAL NOT NULL,
+    low REAL NOT NULL,
+    close REAL NOT NULL,
+    adj_close REAL,
+    volume INTEGER NOT NULL CHECK (volume >= 0),
+    source TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_symbol TEXT NOT NULL,
+    exchange TEXT NOT NULL DEFAULT 'NSE',
+    retrieval_timestamp TEXT NOT NULL,
+    ingestion_run_id TEXT NOT NULL,
+    raw_response_hash TEXT NOT NULL,
+    provenance_classification TEXT NOT NULL,
+    data_quality_status TEXT NOT NULL,
+    PRIMARY KEY (symbol, interval, timestamp)
+)
+"""
+
 SAVED_SCREENERS_DDL = """
 CREATE TABLE IF NOT EXISTS saved_screeners (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT,
     name        TEXT NOT NULL,
     description TEXT,
     config_json TEXT NOT NULL,
@@ -132,6 +554,7 @@ CREATE TABLE IF NOT EXISTS saved_screeners (
 SAVED_CUSTOM_SCANNERS_DDL = """
 CREATE TABLE IF NOT EXISTS saved_custom_scanners (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT,
     name            TEXT NOT NULL,
     description     TEXT,
     universe        TEXT DEFAULT 'all',
@@ -146,6 +569,7 @@ CREATE TABLE IF NOT EXISTS saved_custom_scanners (
 CUSTOM_WATCHLISTS_DDL = """
 CREATE TABLE IF NOT EXISTS custom_watchlists (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT,
     name            TEXT NOT NULL,
     description     TEXT,
     symbols_json    TEXT NOT NULL DEFAULT '[]',
@@ -157,6 +581,7 @@ CREATE TABLE IF NOT EXISTS custom_watchlists (
 MARKET_ALERTS_DDL = """
 CREATE TABLE IF NOT EXISTS market_alerts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT,
     symbol          TEXT NOT NULL,
     alert_type      TEXT NOT NULL,
     target_value    REAL,
@@ -172,6 +597,7 @@ CREATE TABLE IF NOT EXISTS market_alerts (
 MARKET_ALERT_HISTORY_DDL = """
 CREATE TABLE IF NOT EXISTS market_alert_history (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT,
     alert_id        INTEGER,
     symbol          TEXT NOT NULL,
     alert_type      TEXT NOT NULL,
@@ -185,6 +611,7 @@ CREATE TABLE IF NOT EXISTS market_alert_history (
 RESEARCH_TRADE_PLANS_DDL = """
 CREATE TABLE IF NOT EXISTS research_trade_plans (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                 TEXT,
     symbol                  TEXT NOT NULL,
     exchange                TEXT NOT NULL DEFAULT 'NSE',
     setup_type              TEXT NOT NULL,
@@ -214,6 +641,7 @@ CREATE TABLE IF NOT EXISTS research_trade_plans (
 RESEARCH_NOTES_DDL = """
 CREATE TABLE IF NOT EXISTS research_notes (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                 TEXT,
     symbol                  TEXT NOT NULL,
     title                   TEXT,
     note                    TEXT NOT NULL,
@@ -641,10 +1069,76 @@ _INSERT_SQL = (
 # Initialisation
 # ---------------------------------------------------------------------------
 
+def _init_postgres_db():
+    """Initialise PostgreSQL database using schema migrations and seed initial data if empty."""
+    sql_path = Path(__file__).resolve().parents[2] / "database" / "supabase_migrations.sql"
+    with connect() as con:
+        if sql_path.exists():
+            try:
+                migration_sql = sql_path.read_text(encoding="utf-8")
+                con.execute(migration_sql)
+                con.commit()
+                logger.info("PostgreSQL schema successfully initialized from supabase_migrations.sql")
+            except Exception as e:
+                logger.warning("Could not run full supabase_migrations.sql (may already exist or restricted): %s", e)
+                con.rollback()
+        con.execute(OBSERVED_INTRADAY_OHLCV_DDL)
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observed_intraday_run "
+            "ON observed_intraday_ohlcv (ingestion_run_id)"
+        )
+
+        # Seed sample data ONLY when the stocks table is empty
+        try:
+            count_row = con.execute("SELECT COUNT(*) FROM stocks").fetchone()
+            count = count_row[0] if count_row else 0
+            if count == 0:
+                con.executemany(_INSERT_SQL, SAMPLE_STOCKS)
+                con.commit()
+                logger.info("Seeded %d sample stocks into PostgreSQL database", len(SAMPLE_STOCKS))
+        except Exception as e:
+            logger.warning("Error checking or seeding PostgreSQL stocks: %s", e)
+
+        # Seed initial custom watchlists if empty
+        try:
+            wl_row = con.execute("SELECT COUNT(*) FROM custom_watchlists").fetchone()
+            wl_count = wl_row[0] if wl_row else 0
+            if wl_count == 0:
+                import json
+                default_wl = [
+                    ("Core NIFTY Leaders", "Large-cap compounders and market leaders", json.dumps(["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "BHARTIARTL"])),
+                    ("High Momentum & Breakouts", "Active breakout and high RVOL candidates", json.dumps(["TRENT", "TATAMOTORS", "SUNPHARMA", "LT"])),
+                    ("Capital Goods & Defense", "Heavy engineering and defense focus", json.dumps(["LT", "NTPC", "POWERGRID", "JSWSTEEL"])),
+                ]
+                con.executemany(
+                    "INSERT INTO custom_watchlists (name, description, symbols_json) VALUES (?, ?, ?)",
+                    default_wl,
+                )
+                con.commit()
+        except Exception as e:
+            logger.warning("Error seeding watchlists: %s", e)
+
+
 def init_db():
+    if is_postgres():
+        _init_postgres_db()
+        # Initialise fundamental data tables (additive)
+        try:
+            from app.fundamental_db import init_fundamental_tables
+            init_fundamental_tables()
+            from app.services.fundamental_seeder import seed_fundamental_data
+            seed_fundamental_data()
+        except Exception as e:
+            logger.warning("Could not initialise fundamental tables in postgres: %s", e)
+        return
+
     with connect() as con:
         con.execute(STOCKS_DDL)
         con.execute(OHLCV_DDL)
+        try:
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ohlcv_sym_int_ts ON ohlcv (symbol, interval, timestamp)")
+        except Exception:
+            pass
         con.execute(SAVED_SCREENERS_DDL)
         con.execute(DATA_UPDATES_DDL)
         con.execute(SAVED_CUSTOM_SCANNERS_DDL)
@@ -653,12 +1147,39 @@ def init_db():
         con.execute(MARKET_ALERT_HISTORY_DDL)
         con.execute(RESEARCH_TRADE_PLANS_DDL)
         con.execute(RESEARCH_NOTES_DDL)
+        con.execute(INTRADAY_INGESTION_RUNS_DDL)
+        for column in ("actual_start_date", "actual_end_date", "provider_metadata_json", "session_quality_json"):
+            try:
+                con.execute(f"SELECT {column} FROM intraday_ingestion_runs LIMIT 1")
+            except sqlite3.OperationalError:
+                con.execute(f"ALTER TABLE intraday_ingestion_runs ADD COLUMN {column} TEXT")
+        con.execute(BAR_PROVENANCE_DDL)
+        con.execute(OBSERVED_INTRADAY_OHLCV_DDL)
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observed_intraday_sym_int_ts "
+            "ON observed_intraday_ohlcv (symbol, interval, timestamp)"
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observed_intraday_run "
+            "ON observed_intraday_ohlcv (ingestion_run_id)"
+        )
 
         # Add adj_close column if upgrading from old schema
         try:
             con.execute("SELECT adj_close FROM ohlcv LIMIT 1")
         except sqlite3.OperationalError:
             con.execute("ALTER TABLE ohlcv ADD COLUMN adj_close REAL")
+
+        # Add user_id column if upgrading from old SQLite schema
+        user_tables = [
+            "saved_screeners", "saved_custom_scanners", "custom_watchlists",
+            "market_alerts", "market_alert_history", "research_trade_plans", "research_notes"
+        ]
+        for tbl in user_tables:
+            try:
+                con.execute(f"ALTER TABLE {tbl} ADD COLUMN user_id TEXT")
+            except Exception:
+                pass
 
         # Seed sample data ONLY when the stocks table is empty
         count = con.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]
@@ -733,8 +1254,7 @@ def init_db():
         from app.services.fundamental_seeder import seed_fundamental_data
         seed_fundamental_data()
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Could not initialise fundamental tables: %s", e)
+        logger.warning("Could not initialise fundamental tables: %s", e)
 
 
 
@@ -776,14 +1296,279 @@ def get_stock(symbol: str):
         return dict(row) if row else None
 
 
-def get_bars(symbol: str, interval: str = "daily"):
+def get_bars(symbol: str, interval: str = "daily", exclude_synthetic: bool = False):
+    with connect() as con:
+        if interval == "5m":
+            query = """
+                SELECT symbol, timestamp, open, high, low, close, volume, source, adj_close
+                FROM observed_intraday_ohlcv
+                WHERE symbol = ? AND interval = ?
+                UNION ALL
+                SELECT b.symbol, b.timestamp, b.open, b.high, b.low, b.close, b.volume, b.source, b.adj_close
+                FROM ohlcv b
+                WHERE b.symbol = ? AND b.interval = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM observed_intraday_ohlcv o
+                      WHERE o.symbol = b.symbol
+                        AND o.interval = b.interval
+                        AND substr(o.timestamp, 1, 10) = substr(b.timestamp, 1, 10)
+                  )
+            """
+            params: list[Any] = [symbol, interval, symbol, interval]
+            if exclude_synthetic:
+                query = query.replace(
+                    "WHERE symbol = ? AND interval = ?",
+                    "WHERE symbol = ? AND interval = ? AND provenance_classification LIKE 'OBSERVED%'",
+                    1,
+                )
+                query += (
+                    " AND (b.source IS NULL OR (b.source NOT LIKE '%calibrated%' "
+                    "AND b.source NOT LIKE '%synthetic%' AND b.source NOT LIKE '%mock%'))"
+                )
+            query += " ORDER BY timestamp"
+            rows = con.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+        query = (
+            "SELECT timestamp, open, high, low, close, volume, source, adj_close "
+            "FROM ohlcv WHERE symbol = ? AND interval = ?"
+        )
+        params: list[Any] = [symbol, interval]
+        if exclude_synthetic:
+            query += " AND (source IS NULL OR (source NOT LIKE '%calibrated%' AND source NOT LIKE '%synthetic%' AND source NOT LIKE '%mock%'))"
+        query += " ORDER BY timestamp"
+        rows = con.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Intraday Provenance & Ingestion Run Helpers (Phase 14.4)
+# ---------------------------------------------------------------------------
+
+def record_ingestion_run(run_data: dict) -> str:
+    """Record an intraday historical ingestion run for provenance tracking."""
+    run_id = str(run_data.get("id") or uuid.uuid4())
+    sql = (
+        "INSERT INTO intraday_ingestion_runs "
+        "(id, symbol, provider, provider_symbol, exchange, segment, interval, "
+        "start_date, end_date, bar_count, retrieval_timestamp, raw_response_hash, "
+        "transformation_version, provenance_classification, data_quality_status, error_message, "
+        "actual_start_date, actual_end_date, provider_metadata_json, session_quality_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    with connect() as con:
+        con.execute(sql, (
+            run_id,
+            run_data.get("symbol", "").upper(),
+            run_data.get("provider", "unknown"),
+            run_data.get("provider_symbol", ""),
+            run_data.get("exchange", "NSE"),
+            run_data.get("segment", "EQUITY"),
+            run_data.get("interval", "5m"),
+            run_data.get("start_date"),
+            run_data.get("end_date"),
+            int(run_data.get("bar_count", 0)),
+            run_data.get("retrieval_timestamp") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            run_data.get("raw_response_hash"),
+            run_data.get("transformation_version", "v1.0"),
+            run_data.get("provenance_classification", "UNKNOWN"),
+            run_data.get("data_quality_status", "UNKNOWN"),
+            run_data.get("error_message"),
+            run_data.get("actual_start_date"),
+            run_data.get("actual_end_date"),
+            run_data.get("provider_metadata_json"),
+            run_data.get("session_quality_json"),
+        ))
+        con.commit()
+    return run_id
+
+
+def persist_intraday_ingestion(
+    run_data: dict,
+    bars: list[dict],
+    provenance_records: list[dict],
+) -> tuple[str, int]:
+    """Atomically save one audited ingestion run and its validated observed bars."""
+    run_id = str(run_data.get("id") or uuid.uuid4())
+    retrieval_timestamp = run_data.get("retrieval_timestamp") or datetime.now(timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    run_sql = (
+        "INSERT INTO intraday_ingestion_runs "
+        "(id, symbol, provider, provider_symbol, exchange, segment, interval, "
+        "start_date, end_date, bar_count, retrieval_timestamp, raw_response_hash, "
+        "transformation_version, provenance_classification, data_quality_status, error_message, "
+        "actual_start_date, actual_end_date, provider_metadata_json, session_quality_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    bar_sql = (
+        "INSERT INTO observed_intraday_ohlcv "
+        "(symbol, interval, timestamp, provider_timestamp, open, high, low, close, adj_close, "
+        "volume, source, provider, provider_symbol, exchange, retrieval_timestamp, ingestion_run_id, "
+        "raw_response_hash, provenance_classification, data_quality_status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT (symbol, interval, timestamp) DO NOTHING"
+    )
+    provenance_sql = (
+        "INSERT INTO bar_provenance "
+        "(symbol, interval, timestamp, provider, provider_symbol, exchange, segment, "
+        "retrieval_timestamp, ingestion_run_id, raw_response_hash, transformation_version, "
+        "provenance_classification, data_quality_status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT (symbol, interval, timestamp) DO NOTHING"
+    )
+
+    with connect() as con:
+        con.execute(run_sql, (
+            run_id,
+            str(run_data.get("symbol", "")).upper(),
+            run_data.get("provider", "unknown"),
+            run_data.get("provider_symbol", ""),
+            run_data.get("exchange", "NSE"),
+            run_data.get("segment", "EQUITY"),
+            run_data.get("interval", "5m"),
+            run_data.get("start_date"),
+            run_data.get("end_date"),
+            int(run_data.get("bar_count", len(bars))),
+            retrieval_timestamp,
+            run_data.get("raw_response_hash"),
+            run_data.get("transformation_version", "v1.0"),
+            run_data.get("provenance_classification", "UNKNOWN"),
+            run_data.get("data_quality_status", "UNKNOWN"),
+            run_data.get("error_message"),
+            run_data.get("actual_start_date"),
+            run_data.get("actual_end_date"),
+            run_data.get("provider_metadata_json"),
+            run_data.get("session_quality_json"),
+        ))
+
+        if bars:
+            cur = con.executemany(bar_sql, [
+                (
+                    str(bar.get("symbol", run_data.get("symbol", ""))).upper(),
+                    bar.get("interval", run_data.get("interval", "5m")),
+                    bar.get("timestamp"),
+                    bar.get("provider_timestamp"),
+                    bar.get("open"),
+                    bar.get("high"),
+                    bar.get("low"),
+                    bar.get("close"),
+                    bar.get("adj_close"),
+                    bar.get("volume"),
+                    bar.get("source"),
+                    bar.get("provider", run_data.get("provider")),
+                    bar.get("provider_symbol", run_data.get("provider_symbol")),
+                    bar.get("exchange", run_data.get("exchange", "NSE")),
+                    bar.get("retrieval_timestamp", retrieval_timestamp),
+                    run_id,
+                    bar.get("raw_response_hash", run_data.get("raw_response_hash")),
+                    bar.get("provenance_classification", "UNKNOWN"),
+                    bar.get("data_quality_status", "UNKNOWN"),
+                )
+                for bar in bars
+            ])
+            inserted_count = max(cur.rowcount, 0)
+        else:
+            inserted_count = 0
+
+        if provenance_records:
+            con.executemany(provenance_sql, [
+                (
+                    str(item.get("symbol", run_data.get("symbol", ""))).upper(),
+                    item.get("interval", run_data.get("interval", "5m")),
+                    item.get("timestamp"),
+                    item.get("provider", run_data.get("provider", "unknown")),
+                    item.get("provider_symbol", run_data.get("provider_symbol", "")),
+                    item.get("exchange", run_data.get("exchange", "NSE")),
+                    item.get("segment", "EQUITY"),
+                    item.get("retrieval_timestamp", retrieval_timestamp),
+                    run_id,
+                    item.get("raw_response_hash", run_data.get("raw_response_hash")),
+                    item.get("transformation_version", "v1.0"),
+                    item.get("provenance_classification", "UNKNOWN"),
+                    item.get("data_quality_status", "UNKNOWN"),
+                )
+                for item in provenance_records
+            ])
+    return run_id, inserted_count
+
+
+def get_ingestion_run(run_id: str) -> Optional[dict]:
+    """Retrieve details for a specific ingestion run."""
+    with connect() as con:
+        row = con.execute("SELECT * FROM intraday_ingestion_runs WHERE id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_ingestion_runs(symbol: Optional[str] = None, limit: int = 50) -> list[dict]:
+    """List recent intraday ingestion runs, optionally filtered by symbol."""
+    with connect() as con:
+        if symbol:
+            rows = con.execute(
+                "SELECT * FROM intraday_ingestion_runs WHERE symbol = ? ORDER BY created_at DESC LIMIT ?",
+                (symbol.upper(), limit)
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM intraday_ingestion_runs ORDER BY created_at DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def record_bar_provenance_batch(records: list[dict]) -> int:
+    """Record provenance metadata for a batch of ingested bars."""
+    if not records:
+        return 0
+    sql = (
+        "INSERT OR REPLACE INTO bar_provenance "
+        "(symbol, interval, timestamp, provider, provider_symbol, exchange, segment, "
+        "retrieval_timestamp, ingestion_run_id, raw_response_hash, transformation_version, "
+        "provenance_classification, data_quality_status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    rows = [
+        (
+            r.get("symbol", "").upper(),
+            r.get("interval", "5m"),
+            r.get("timestamp"),
+            r.get("provider", "unknown"),
+            r.get("provider_symbol", ""),
+            r.get("exchange", "NSE"),
+            r.get("segment", "EQUITY"),
+            r.get("retrieval_timestamp") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            r.get("ingestion_run_id", ""),
+            r.get("raw_response_hash"),
+            r.get("transformation_version", "v1.0"),
+            r.get("provenance_classification", "UNKNOWN"),
+            r.get("data_quality_status", "UNKNOWN"),
+        )
+        for r in records
+    ]
+    with connect() as con:
+        con.executemany(sql, rows)
+        con.commit()
+    return len(rows)
+
+
+def get_bar_provenance(symbol: str, interval: str, timestamp: str) -> Optional[dict]:
+    """Retrieve provenance record for a specific bar."""
+    with connect() as con:
+        row = con.execute(
+            "SELECT * FROM bar_provenance WHERE symbol = ? AND interval = ? AND timestamp = ?",
+            (symbol.upper(), interval, timestamp)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_bars_provenance_map(symbol: str, interval: str = "5m") -> dict[str, dict]:
+    """Retrieve mapping of timestamp -> provenance dict for all bars of a symbol/interval."""
     with connect() as con:
         rows = con.execute(
-            "SELECT timestamp, open, high, low, close, volume "
-            "FROM ohlcv WHERE symbol = ? AND interval = ? ORDER BY timestamp",
-            (symbol, interval),
+            "SELECT * FROM bar_provenance WHERE symbol = ? AND interval = ?",
+            (symbol.upper(), interval)
         ).fetchall()
-        return [dict(r) for r in rows]
+        return {r["timestamp"]: dict(r) for r in rows}
 
 
 def get_sectors():
@@ -808,37 +1593,60 @@ def get_exchanges():
 # Saved screeners
 # ---------------------------------------------------------------------------
 
-def save_screener(name: str, description: str, config_json: str) -> int:
+def _build_user_filter(user_id: Optional[str], table_prefix: str = "") -> Tuple[str, list]:
+    """Helper to build consistent tenant-isolated user_id SQL clauses."""
+    prefix = f"{table_prefix}." if table_prefix else ""
+    local_ids = {"local-operator", "00000000-0000-0000-0000-000000000000"}
+    if user_id in local_ids:
+        return f"({prefix}user_id = ? OR {prefix}user_id IS NULL)", [user_id]
+    elif user_id:
+        return f"{prefix}user_id = ?", [user_id]
+    return "", []
+
+
+def save_screener(name: str, description: str, config_json: str, user_id: Optional[str] = None) -> int:
     with connect() as con:
         cur = con.execute(
-            "INSERT INTO saved_screeners (name, description, config_json) VALUES (?, ?, ?)",
-            (name, description, config_json),
+            "INSERT INTO saved_screeners (name, description, config_json, user_id) VALUES (?, ?, ?, ?)",
+            (name, description, config_json, user_id),
         )
         con.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
 
-def list_saved_screeners():
+def list_saved_screeners(user_id: Optional[str] = None):
+    clause, params = _build_user_filter(user_id)
+    where = f" WHERE {clause}" if clause else ""
     with connect() as con:
         rows = con.execute(
-            "SELECT id, name, description, config_json, created_at, updated_at "
-            "FROM saved_screeners ORDER BY updated_at DESC"
+            f"SELECT id, name, description, config_json, created_at, updated_at "
+            f"FROM saved_screeners{where} ORDER BY updated_at DESC",
+            params,
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_saved_screener(screener_id: int):
+def get_saved_screener(screener_id: int, user_id: Optional[str] = None):
+    clause, params = _build_user_filter(user_id)
+    sql = "SELECT id, name, description, config_json, created_at, updated_at FROM saved_screeners WHERE id = ?"
+    all_params = [screener_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        row = con.execute(
-            "SELECT id, name, description, config_json, created_at, updated_at "
-            "FROM saved_screeners WHERE id = ?", (screener_id,)
-        ).fetchone()
+        row = con.execute(sql, all_params).fetchone()
         return dict(row) if row else None
 
 
-def delete_saved_screener(screener_id: int) -> bool:
+def delete_saved_screener(screener_id: int, user_id: Optional[str] = None) -> bool:
+    clause, params = _build_user_filter(user_id)
+    sql = "DELETE FROM saved_screeners WHERE id = ?"
+    all_params = [screener_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute("DELETE FROM saved_screeners WHERE id = ?", (screener_id,))
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
@@ -854,33 +1662,39 @@ def save_custom_scanner(
     timeframe: str,
     logic_mode: str,
     conditions_json: str,
+    user_id: Optional[str] = None,
 ) -> int:
     with connect() as con:
         cur = con.execute(
-            "INSERT INTO saved_custom_scanners (name, description, universe, timeframe, logic_mode, conditions_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (name, description, universe, timeframe, logic_mode, conditions_json),
+            "INSERT INTO saved_custom_scanners (name, description, universe, timeframe, logic_mode, conditions_json, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, description, universe, timeframe, logic_mode, conditions_json, user_id),
         )
         con.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
 
-def list_custom_scanners() -> list[dict]:
+def list_custom_scanners(user_id: Optional[str] = None) -> list[dict]:
+    clause, params = _build_user_filter(user_id)
+    where = f" WHERE {clause}" if clause else ""
     with connect() as con:
         rows = con.execute(
-            "SELECT id, name, description, universe, timeframe, logic_mode, conditions_json, created_at, updated_at "
-            "FROM saved_custom_scanners ORDER BY updated_at DESC"
+            f"SELECT id, name, description, universe, timeframe, logic_mode, conditions_json, created_at, updated_at "
+            f"FROM saved_custom_scanners{where} ORDER BY updated_at DESC",
+            params,
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_custom_scanner(scanner_id: int) -> Optional[dict]:
+def get_custom_scanner(scanner_id: int, user_id: Optional[str] = None) -> Optional[dict]:
+    clause, params = _build_user_filter(user_id)
+    sql = "SELECT id, name, description, universe, timeframe, logic_mode, conditions_json, created_at, updated_at FROM saved_custom_scanners WHERE id = ?"
+    all_params = [scanner_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        row = con.execute(
-            "SELECT id, name, description, universe, timeframe, logic_mode, conditions_json, created_at, updated_at "
-            "FROM saved_custom_scanners WHERE id = ?",
-            (scanner_id,),
-        ).fetchone()
+        row = con.execute(sql, all_params).fetchone()
         return dict(row) if row else None
 
 
@@ -892,20 +1706,32 @@ def update_custom_scanner(
     timeframe: str,
     logic_mode: str,
     conditions_json: str,
+    user_id: Optional[str] = None,
 ) -> bool:
+    clause, params = _build_user_filter(user_id)
+    sql = (
+        "UPDATE saved_custom_scanners SET name = ?, description = ?, universe = ?, timeframe = ?, "
+        "logic_mode = ?, conditions_json = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    all_params = [name, description, universe, timeframe, logic_mode, conditions_json, scanner_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute(
-            "UPDATE saved_custom_scanners SET name = ?, description = ?, universe = ?, timeframe = ?, "
-            "logic_mode = ?, conditions_json = ?, updated_at = datetime('now') WHERE id = ?",
-            (name, description, universe, timeframe, logic_mode, conditions_json, scanner_id),
-        )
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
 
-def delete_custom_scanner(scanner_id: int) -> bool:
+def delete_custom_scanner(scanner_id: int, user_id: Optional[str] = None) -> bool:
+    clause, params = _build_user_filter(user_id)
+    sql = "DELETE FROM saved_custom_scanners WHERE id = ?"
+    all_params = [scanner_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute("DELETE FROM saved_custom_scanners WHERE id = ?", (scanner_id,))
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
@@ -914,32 +1740,37 @@ def delete_custom_scanner(scanner_id: int) -> bool:
 # Custom Watchlists (Phase 11)
 # ---------------------------------------------------------------------------
 
-def list_custom_watchlists() -> list[dict]:
+def list_custom_watchlists(user_id: Optional[str] = None) -> list[dict]:
+    clause, params = _build_user_filter(user_id)
+    where = f" WHERE {clause}" if clause else ""
     with connect() as con:
         rows = con.execute(
-            "SELECT id, name, description, symbols_json, created_at, updated_at "
-            "FROM custom_watchlists ORDER BY updated_at DESC"
+            f"SELECT id, name, description, symbols_json, created_at, updated_at "
+            f"FROM custom_watchlists{where} ORDER BY updated_at DESC",
+            params,
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_custom_watchlist(watchlist_id: int) -> Optional[dict]:
+def get_custom_watchlist(watchlist_id: int, user_id: Optional[str] = None) -> Optional[dict]:
+    clause, params = _build_user_filter(user_id)
+    sql = "SELECT id, name, description, symbols_json, created_at, updated_at FROM custom_watchlists WHERE id = ?"
+    all_params = [watchlist_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        row = con.execute(
-            "SELECT id, name, description, symbols_json, created_at, updated_at "
-            "FROM custom_watchlists WHERE id = ?",
-            (watchlist_id,),
-        ).fetchone()
+        row = con.execute(sql, all_params).fetchone()
         return dict(row) if row else None
 
 
-def create_custom_watchlist(name: str, description: str = "", symbols: Optional[list[str]] = None) -> int:
+def create_custom_watchlist(name: str, description: str = "", symbols: Optional[list[str]] = None, user_id: Optional[str] = None) -> int:
     import json
     symbols_json = json.dumps([s.upper() for s in (symbols or [])])
     with connect() as con:
         cur = con.execute(
-            "INSERT INTO custom_watchlists (name, description, symbols_json) VALUES (?, ?, ?)",
-            (name, description, symbols_json),
+            "INSERT INTO custom_watchlists (name, description, symbols_json, user_id) VALUES (?, ?, ?, ?)",
+            (name, description, symbols_json, user_id),
         )
         con.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -950,30 +1781,42 @@ def update_custom_watchlist(
     name: str,
     description: str = "",
     symbols: Optional[list[str]] = None,
+    user_id: Optional[str] = None,
 ) -> bool:
     import json
     symbols_json = json.dumps([s.upper() for s in (symbols or [])])
+    clause, params = _build_user_filter(user_id)
+    sql = (
+        "UPDATE custom_watchlists SET name = ?, description = ?, symbols_json = ?, updated_at = datetime('now') "
+        "WHERE id = ?"
+    )
+    all_params = [name, description, symbols_json, watchlist_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute(
-            "UPDATE custom_watchlists SET name = ?, description = ?, symbols_json = ?, updated_at = datetime('now') "
-            "WHERE id = ?",
-            (name, description, symbols_json, watchlist_id),
-        )
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
 
-def delete_custom_watchlist(watchlist_id: int) -> bool:
+def delete_custom_watchlist(watchlist_id: int, user_id: Optional[str] = None) -> bool:
+    clause, params = _build_user_filter(user_id)
+    sql = "DELETE FROM custom_watchlists WHERE id = ?"
+    all_params = [watchlist_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute("DELETE FROM custom_watchlists WHERE id = ?", (watchlist_id,))
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
 
-def add_symbol_to_watchlist(watchlist_id: int, symbol: str) -> bool:
+def add_symbol_to_watchlist(watchlist_id: int, symbol: str, user_id: Optional[str] = None) -> bool:
     import json
     sym = symbol.upper()
-    wl = get_custom_watchlist(watchlist_id)
+    wl = get_custom_watchlist(watchlist_id, user_id=user_id)
     if not wl:
         return False
     try:
@@ -987,14 +1830,15 @@ def add_symbol_to_watchlist(watchlist_id: int, symbol: str) -> bool:
             name=wl["name"],
             description=wl.get("description", ""),
             symbols=symbols,
+            user_id=user_id,
         )
     return True
 
 
-def remove_symbol_from_watchlist(watchlist_id: int, symbol: str) -> bool:
+def remove_symbol_from_watchlist(watchlist_id: int, symbol: str, user_id: Optional[str] = None) -> bool:
     import json
     sym = symbol.upper()
-    wl = get_custom_watchlist(watchlist_id)
+    wl = get_custom_watchlist(watchlist_id, user_id=user_id)
     if not wl:
         return False
     try:
@@ -1008,6 +1852,7 @@ def remove_symbol_from_watchlist(watchlist_id: int, symbol: str) -> bool:
             name=wl["name"],
             description=wl.get("description", ""),
             symbols=symbols,
+            user_id=user_id,
         )
     return True
 
@@ -1016,21 +1861,31 @@ def remove_symbol_from_watchlist(watchlist_id: int, symbol: str) -> bool:
 # Market Alerts & History (Phase 11)
 # ---------------------------------------------------------------------------
 
-def list_market_alerts(status: Optional[str] = None) -> list[dict]:
+def list_market_alerts(status: Optional[str] = None, user_id: Optional[str] = None) -> list[dict]:
+    clauses = []
+    params = []
+    if status:
+        clauses.append("status = ?")
+        params.append(status.upper())
+    u_clause, u_params = _build_user_filter(user_id)
+    if u_clause:
+        clauses.append(u_clause)
+        params.extend(u_params)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     with connect() as con:
-        if status:
-            rows = con.execute(
-                "SELECT * FROM market_alerts WHERE status = ? ORDER BY created_at DESC",
-                (status.upper(),),
-            ).fetchall()
-        else:
-            rows = con.execute("SELECT * FROM market_alerts ORDER BY created_at DESC").fetchall()
+        rows = con.execute(f"SELECT * FROM market_alerts{where} ORDER BY created_at DESC", params).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_market_alert(alert_id: int) -> Optional[dict]:
+def get_market_alert(alert_id: int, user_id: Optional[str] = None) -> Optional[dict]:
+    clause, params = _build_user_filter(user_id)
+    sql = "SELECT * FROM market_alerts WHERE id = ?"
+    all_params = [alert_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        row = con.execute("SELECT * FROM market_alerts WHERE id = ?", (alert_id,)).fetchone()
+        row = con.execute(sql, all_params).fetchone()
         return dict(row) if row else None
 
 
@@ -1040,12 +1895,13 @@ def create_market_alert(
     target_value: Optional[float] = None,
     timeframe: str = "1D",
     note: str = "",
+    user_id: Optional[str] = None,
 ) -> int:
     with connect() as con:
         cur = con.execute(
-            "INSERT INTO market_alerts (symbol, alert_type, target_value, timeframe, note, status) "
-            "VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
-            (symbol.upper(), alert_type.upper(), target_value, timeframe, note),
+            "INSERT INTO market_alerts (symbol, alert_type, target_value, timeframe, note, status, user_id) "
+            "VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)",
+            (symbol.upper(), alert_type.upper(), target_value, timeframe, note, user_id),
         )
         con.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -1056,6 +1912,7 @@ def update_market_alert(
     status: Optional[str] = None,
     target_value: Optional[float] = None,
     note: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> bool:
     fields = []
     params = []
@@ -1071,15 +1928,26 @@ def update_market_alert(
     if not fields:
         return False
     params.append(alert_id)
+    clause, u_params = _build_user_filter(user_id)
+    sql = f"UPDATE market_alerts SET {', '.join(fields)} WHERE id = ?"
+    if clause:
+        sql += f" AND {clause}"
+        params.extend(u_params)
     with connect() as con:
-        cur = con.execute(f"UPDATE market_alerts SET {', '.join(fields)} WHERE id = ?", params)
+        cur = con.execute(sql, params)
         con.commit()
         return cur.rowcount > 0
 
 
-def delete_market_alert(alert_id: int) -> bool:
+def delete_market_alert(alert_id: int, user_id: Optional[str] = None) -> bool:
+    clause, params = _build_user_filter(user_id)
+    sql = "DELETE FROM market_alerts WHERE id = ?"
+    all_params = [alert_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute("DELETE FROM market_alerts WHERE id = ?", (alert_id,))
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
@@ -1091,13 +1959,14 @@ def record_market_alert_trigger(
     condition: str,
     triggered_value: str,
     message: str = "",
+    user_id: Optional[str] = None,
 ) -> int:
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     with connect() as con:
         cur = con.execute(
-            "INSERT INTO market_alert_history (alert_id, symbol, alert_type, condition, triggered_value, message, timestamp) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (alert_id, symbol.upper(), alert_type.upper(), condition, triggered_value, message, now_iso),
+            "INSERT INTO market_alert_history (alert_id, symbol, alert_type, condition, triggered_value, message, timestamp, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (alert_id, symbol.upper(), alert_type.upper(), condition, triggered_value, message, now_iso, user_id),
         )
         con.execute(
             "UPDATE market_alerts SET last_triggered = ?, trigger_count = trigger_count + 1 WHERE id = ?",
@@ -1107,18 +1976,22 @@ def record_market_alert_trigger(
         return cur.lastrowid  # type: ignore[return-value]
 
 
-def get_market_alert_history(limit: int = 50) -> list[dict]:
+def get_market_alert_history(limit: int = 50, user_id: Optional[str] = None) -> list[dict]:
+    clause, params = _build_user_filter(user_id)
+    where = f" WHERE {clause}" if clause else ""
     with connect() as con:
         rows = con.execute(
-            "SELECT * FROM market_alert_history ORDER BY id DESC LIMIT ?",
-            (limit,),
+            f"SELECT * FROM market_alert_history{where} ORDER BY id DESC LIMIT ?",
+            params + [limit],
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def clear_market_alert_history() -> int:
+def clear_market_alert_history(user_id: Optional[str] = None) -> int:
+    clause, params = _build_user_filter(user_id)
+    where = f" WHERE {clause}" if clause else ""
     with connect() as con:
-        cur = con.execute("DELETE FROM market_alert_history")
+        cur = con.execute(f"DELETE FROM market_alert_history{where}", params)
         con.commit()
         return cur.rowcount
 
@@ -1151,7 +2024,7 @@ def upsert_ohlcv(
         (
             symbol,
             interval,
-            b["date"],
+            b.get("timestamp") or b.get("date"),
             b.get("open"),
             b.get("high"),
             b.get("low"),
@@ -1272,9 +2145,10 @@ def get_all_symbols() -> list[str]:
 # Research Trade Plans & Notes Persistence (Phase 12)
 # ---------------------------------------------------------------------------
 
-def save_research_trade_plan(plan_data: dict) -> dict:
+def save_research_trade_plan(plan_data: dict, user_id: Optional[str] = None) -> dict:
     """Save or create a research trade plan in the database."""
     import json
+    u_id = user_id or plan_data.get("user_id")
     with connect() as con:
         cur = con.execute(
             """
@@ -1283,8 +2157,8 @@ def save_research_trade_plan(plan_data: dict) -> dict:
                 reference_price, entry_zone_json, stop_loss, target_1, target_2,
                 risk_reward_ratio, setup_score, position_size_qty, position_value,
                 account_capital, risk_pct, invalidation_condition, evidence_json,
-                risks_json, status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                risks_json, status, notes, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(plan_data.get("symbol", "")).upper(),
@@ -1308,6 +2182,7 @@ def save_research_trade_plan(plan_data: dict) -> dict:
                 json.dumps(plan_data.get("risks", [])),
                 str(plan_data.get("status", "MONITORING")).upper(),
                 plan_data.get("notes"),
+                u_id,
             ),
         )
         plan_id = cur.lastrowid
@@ -1315,11 +2190,17 @@ def save_research_trade_plan(plan_data: dict) -> dict:
         return get_research_trade_plan(plan_id) or {}
 
 
-def get_research_trade_plan(plan_id: int) -> Optional[dict]:
+def get_research_trade_plan(plan_id: int, user_id: Optional[str] = None) -> Optional[dict]:
     """Retrieve a single research trade plan by ID."""
     import json
+    clause, params = _build_user_filter(user_id)
+    sql = "SELECT * FROM research_trade_plans WHERE id = ?"
+    all_params = [plan_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        row = con.execute("SELECT * FROM research_trade_plans WHERE id = ?", (plan_id,)).fetchone()
+        row = con.execute(sql, all_params).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -1332,8 +2213,8 @@ def get_research_trade_plan(plan_id: int) -> Optional[dict]:
         return d
 
 
-def list_research_trade_plans(symbol: Optional[str] = None, status: Optional[str] = None) -> list[dict]:
-    """List research trade plans optionally filtered by symbol or status."""
+def list_research_trade_plans(symbol: Optional[str] = None, status: Optional[str] = None, user_id: Optional[str] = None) -> list[dict]:
+    """List research trade plans optionally filtered by symbol, status, or user."""
     import json
     query = "SELECT * FROM research_trade_plans"
     params = []
@@ -1344,6 +2225,10 @@ def list_research_trade_plans(symbol: Optional[str] = None, status: Optional[str
     if status:
         clauses.append("status = ?")
         params.append(status.upper())
+    u_clause, u_params = _build_user_filter(user_id)
+    if u_clause:
+        clauses.append(u_clause)
+        params.extend(u_params)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY created_at DESC"
@@ -1363,7 +2248,7 @@ def list_research_trade_plans(symbol: Optional[str] = None, status: Optional[str
         return result
 
 
-def update_research_trade_plan(plan_id: int, updates: dict) -> Optional[dict]:
+def update_research_trade_plan(plan_id: int, updates: dict, user_id: Optional[str] = None) -> Optional[dict]:
     """Update status, notes, or execution review of a research trade plan."""
     allowed = {"status", "notes"}
     clauses = []
@@ -1373,55 +2258,81 @@ def update_research_trade_plan(plan_id: int, updates: dict) -> Optional[dict]:
             clauses.append(f"{k} = ?")
             params.append(v)
     if not clauses:
-        return get_research_trade_plan(plan_id)
+        return get_research_trade_plan(plan_id, user_id=user_id)
     clauses.append("updated_at = datetime('now')")
     params.append(plan_id)
     sql = f"UPDATE research_trade_plans SET {', '.join(clauses)} WHERE id = ?"
+    u_clause, u_params = _build_user_filter(user_id)
+    if u_clause:
+        sql += f" AND {u_clause}"
+        params.extend(u_params)
     with connect() as con:
         cur = con.execute(sql, params)
         con.commit()
         if cur.rowcount > 0:
-            return get_research_trade_plan(plan_id)
+            return get_research_trade_plan(plan_id, user_id=user_id)
         return None
 
 
-def delete_research_trade_plan(plan_id: int) -> bool:
+def delete_research_trade_plan(plan_id: int, user_id: Optional[str] = None) -> bool:
     """Delete a research trade plan by ID."""
+    clause, params = _build_user_filter(user_id)
+    sql = "DELETE FROM research_trade_plans WHERE id = ?"
+    all_params = [plan_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute("DELETE FROM research_trade_plans WHERE id = ?", (plan_id,))
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
 
 
-def save_research_note(symbol: str, note: str, title: Optional[str] = None, tags: Optional[str] = None) -> dict:
+def save_research_note(symbol: str, note: str, title: Optional[str] = None, tags: Optional[str] = None, user_id: Optional[str] = None) -> dict:
     """Save a manual qualitative research note for a stock."""
     with connect() as con:
         cur = con.execute(
-            "INSERT INTO research_notes (symbol, title, note, tags) VALUES (?, ?, ?, ?)",
-            (symbol.upper(), title, note, tags),
+            "INSERT INTO research_notes (symbol, title, note, tags, user_id) VALUES (?, ?, ?, ?, ?)",
+            (symbol.upper(), title, note, tags, user_id),
         )
         note_id = cur.lastrowid
         con.commit()
-        row = con.execute("SELECT * FROM research_notes WHERE id = ?", (note_id,)).fetchone()
+        clause, params = _build_user_filter(user_id)
+        sql = "SELECT * FROM research_notes WHERE id = ?"
+        all_params = [note_id]
+        if clause:
+            sql += f" AND {clause}"
+            all_params.extend(params)
+        row = con.execute(sql, all_params).fetchone()
         return dict(row) if row else {}
 
 
-def list_research_notes(symbol: Optional[str] = None) -> list[dict]:
-    """List research notes optionally filtered by symbol."""
+def list_research_notes(symbol: Optional[str] = None, user_id: Optional[str] = None) -> list[dict]:
+    """List research notes optionally filtered by symbol or user."""
+    clauses = []
+    params = []
+    if symbol:
+        clauses.append("symbol = ?")
+        params.append(symbol.upper())
+    u_clause, u_params = _build_user_filter(user_id)
+    if u_clause:
+        clauses.append(u_clause)
+        params.extend(u_params)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     with connect() as con:
-        if symbol:
-            rows = con.execute(
-                "SELECT * FROM research_notes WHERE symbol = ? ORDER BY created_at DESC",
-                (symbol.upper(),),
-            ).fetchall()
-        else:
-            rows = con.execute("SELECT * FROM research_notes ORDER BY created_at DESC").fetchall()
+        rows = con.execute(f"SELECT * FROM research_notes{where} ORDER BY created_at DESC", params).fetchall()
         return [dict(r) for r in rows]
 
 
-def delete_research_note(note_id: int) -> bool:
+def delete_research_note(note_id: int, user_id: Optional[str] = None) -> bool:
     """Delete a research note by ID."""
+    clause, params = _build_user_filter(user_id)
+    sql = "DELETE FROM research_notes WHERE id = ?"
+    all_params = [note_id]
+    if clause:
+        sql += f" AND {clause}"
+        all_params.extend(params)
     with connect() as con:
-        cur = con.execute("DELETE FROM research_notes WHERE id = ?", (note_id,))
+        cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0

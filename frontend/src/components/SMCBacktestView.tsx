@@ -1,3 +1,4 @@
+import { apiFetch } from "../api/client";
 import React, { useState } from "react";
 
 interface TradeRecord {
@@ -157,7 +158,7 @@ export default function SMCBacktestView({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/smc/backtest", {
+      const res = await apiFetch("/api/smc/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -195,8 +196,7 @@ export default function SMCBacktestView({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `http://127.0.0.1:8000/api/smc/walk-forward/${symbol.toUpperCase()}?strategy_type=${strategyType}&target_rr=${targetRR}&cost_bps=${costBps}&trade_type=${tradeType}&brokerage_model=${brokerageModel}`
+      const res = await apiFetch(`/api/smc/walk-forward/${symbol.toUpperCase()}?strategy_type=${strategyType}&target_rr=${targetRR}&cost_bps=${costBps}&trade_type=${tradeType}&brokerage_model=${brokerageModel}`
       );
       if (!res.ok) throw new Error(`Walk-forward failed with status ${res.status}`);
       const json = await res.json();
@@ -214,8 +214,7 @@ export default function SMCBacktestView({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `http://127.0.0.1:8000/api/smc/sensitivity/${symbol.toUpperCase()}?strategy_type=${strategyType}`
+      const res = await apiFetch(`/api/smc/sensitivity/${symbol.toUpperCase()}?strategy_type=${strategyType}`
       );
       if (!res.ok) throw new Error(`Sensitivity failed with status ${res.status}`);
       const json = await res.json();

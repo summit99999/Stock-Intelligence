@@ -39,12 +39,15 @@ export interface LiveQuotesResponse {
   count: number;
 }
 
-const API_BASE = "http://127.0.0.1:8000";
-const WS_BASE = "ws://127.0.0.1:8000";
+import { getApiBaseUrl } from "./config";
+import { apiFetch } from "./client";
+
+const API_BASE = getApiBaseUrl();
+const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 export async function fetchLiveQuotes(symbols?: string[]): Promise<LiveQuotesResponse> {
   const query = symbols && symbols.length > 0 ? `?symbols=${symbols.join(",")}` : "";
-  const res = await fetch(`${API_BASE}/api/market/live/quotes${query}`);
+  const res = await apiFetch(`/api/market/live/quotes${query}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch live quotes: ${res.statusText}`);
   }
@@ -52,7 +55,7 @@ export async function fetchLiveQuotes(symbols?: string[]): Promise<LiveQuotesRes
 }
 
 export async function fetchLiveFeedStatus(): Promise<LiveFeedStatus> {
-  const res = await fetch(`${API_BASE}/api/market/live/status`);
+  const res = await apiFetch(`/api/market/live/status`);
   if (!res.ok) {
     throw new Error(`Failed to fetch live feed status: ${res.statusText}`);
   }
@@ -60,7 +63,7 @@ export async function fetchLiveFeedStatus(): Promise<LiveFeedStatus> {
 }
 
 export async function refreshLiveQuotes(): Promise<LiveQuotesResponse> {
-  const res = await fetch(`${API_BASE}/api/market/live/refresh`, { method: "POST" });
+  const res = await apiFetch(`/api/market/live/refresh`, { method: "POST" });
   if (!res.ok) {
     throw new Error(`Failed to refresh quotes: ${res.statusText}`);
   }
@@ -69,7 +72,7 @@ export async function refreshLiveQuotes(): Promise<LiveQuotesResponse> {
 
 export async function reconnectLiveFeed(enable: boolean = false): Promise<LiveFeedStatus> {
   const query = enable ? "?enable=true" : "";
-  const res = await fetch(`${API_BASE}/api/market/live/reconnect${query}`, { method: "POST" });
+  const res = await apiFetch(`/api/market/live/reconnect${query}`, { method: "POST" });
   if (!res.ok) {
     throw new Error(`Failed to reconnect live feed: ${res.statusText}`);
   }

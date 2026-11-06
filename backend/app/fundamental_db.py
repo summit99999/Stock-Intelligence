@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from app.database import connect
+from app.database import connect, is_postgres
 from app.schemas.fundamentals import (
     BalanceSheet,
     CashFlow,
@@ -273,6 +273,9 @@ def _migrate_fundamental_columns(con) -> None:
 
 def init_fundamental_tables() -> None:
     """Create all fundamental tables and apply migrations. Safe to call multiple times."""
+    if is_postgres():
+        logger.info("Fundamental tables verified for PostgreSQL mode")
+        return
     with connect() as con:
         con.execute(FUNDAMENTAL_PROFILES_DDL)
         con.execute(FUNDAMENTAL_INCOME_STATEMENTS_DDL)

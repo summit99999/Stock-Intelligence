@@ -83,6 +83,7 @@ def test_daily_and_intraday_rvol_calculations():
         "RELIANCE",
         session_fraction=fraction,
         rvol_time_label=label,
+        intraday_history_bars=[],
     )
 
     expected_intraday_vol = intel["adv_20"] * fraction
@@ -493,7 +494,7 @@ def test_missing_intraday_history_fallback():
     assert res["status"] == "UNAVAILABLE"
 
     # Full stock intelligence with missing intraday bars falls back to LINEAR_ESTIMATED
-    intel = calculate_stock_volume_intelligence("RELIANCE", session_fraction=0.5)
+    intel = calculate_stock_volume_intelligence("RELIANCE", session_fraction=0.5, intraday_history_bars=[])
     assert intel["intraday_rvol_method"] == "LINEAR_ESTIMATED"
     assert intel["intraday_rvol_status"] == "ESTIMATED"
     assert intel["historical_time_of_day_rvol"] is None
