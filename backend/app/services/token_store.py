@@ -228,7 +228,7 @@ def store_upstox_token(
     user_name: str = "",
     expires_at: str = "",
 ) -> bool:
-    """Store the Upstox access token securely via Keyring or memory cache."""
+    """Store the Upstox access token securely via database, Keyring, and memory cache."""
     now_dt = datetime.now(timezone.utc)
     if not expires_at:
         from datetime import timedelta
@@ -243,19 +243,28 @@ def store_upstox_token(
     )
     _MEMORY_TOKEN_CACHE["upstox"] = stored_token
 
+    payload = json.dumps({
+        "access_token": access_token,
+        "user_id": user_id,
+        "user_name": user_name,
+        "expires_at": expires_at,
+        "stored_at": stored_token.stored_at,
+    })
+
+    # 1. Persist to database table app_settings so tokens survive container restarts
+    try:
+        from app.database import set_app_setting
+        set_app_setting("upstox_token_payload", payload)
+    except Exception as e:
+        logger.warning("Could not persist Upstox token to database: %s", e)
+
+    # 2. Persist to OS keyring if available
     if not _keyring_available():
-        logger.info("Keyring unavailable; stored Upstox token in secure memory cache.")
+        logger.info("Keyring unavailable; stored Upstox token in database & secure memory.")
         return True
 
     try:
         import keyring  # noqa: F811
-        payload = json.dumps({
-            "access_token": access_token,
-            "user_id": user_id,
-            "user_name": user_name,
-            "expires_at": expires_at,
-            "stored_at": stored_token.stored_at,
-        })
         keyring.set_password(SERVICE_NAME_UPSTOX, USERNAME_TOKEN, payload)
         logger.info("Upstox access token stored securely via keyring.")
         return True
@@ -270,7 +279,20 @@ def get_upstox_token() -> Optional[StoredToken]:
     if "upstox" in _MEMORY_TOKEN_CACHE and not _MEMORY_TOKEN_CACHE["upstox"].is_expired:
         return _MEMORY_TOKEN_CACHE["upstox"]
 
-    # 2. Check keyring
+    # 2. Check database persistence
+    try:
+        from app.database import get_app_setting
+        raw_db = get_app_setting("upstox_token_payload")
+        if raw_db:
+            data = json.loads(raw_db)
+            token = StoredToken(**data)
+            if not token.is_expired:
+                _MEMORY_TOKEN_CACHE["upstox"] = token
+                return token
+    except Exception as e:
+        logger.debug("Could not read Upstox token from database: %s", e)
+
+    # 3. Check keyring
     if _keyring_available():
         try:
             import keyring  # noqa: F811
@@ -284,7 +306,7 @@ def get_upstox_token() -> Optional[StoredToken]:
         except Exception:
             pass
 
-    # 3. Check environment / config fallback
+    # 4. Check environment / config fallback
     from app.config import get_upstox_config
     cfg = get_upstox_config()
     if cfg.access_token:
@@ -303,8 +325,15 @@ def get_upstox_token() -> Optional[StoredToken]:
 
 
 def delete_upstox_token() -> bool:
-    """Remove the stored Upstox token."""
+    """Remove the stored Upstox token from memory, database, and keyring."""
     _MEMORY_TOKEN_CACHE.pop("upstox", None)
+
+    try:
+        from app.database import delete_app_setting
+        delete_app_setting("upstox_token_payload")
+    except Exception:
+        pass
+
     if not _keyring_available():
         return True
 

@@ -641,6 +641,15 @@ CREATE TABLE IF NOT EXISTS instrument_corporate_actions (
 )
 """
 
+
+APP_SETTINGS_DDL = """
+CREATE TABLE IF NOT EXISTS app_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+"""
+
 SAVED_SCREENERS_DDL = """
 CREATE TABLE IF NOT EXISTS saved_screeners (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1272,6 +1281,8 @@ def init_db():
         return
 
     with connect() as con:
+        con.execute(APP_SETTINGS_DDL)
+        con.execute(APP_SETTINGS_DDL)
         con.execute(STOCKS_DDL)
         con.execute(OHLCV_DDL)
         try:
@@ -2710,3 +2721,48 @@ def upsert_corporate_action(action: dict) -> bool:
         con.execute(sql, vals)
         con.commit()
     return True
+
+
+# ---------------------------------------------------------------------------
+# Application Settings & Token Persistence
+# ---------------------------------------------------------------------------
+
+def get_app_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    """Retrieve an application setting value by key."""
+    try:
+        with connect() as con:
+            cur = con.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+    except Exception as e:
+        logger.debug("Could not read app setting '%s': %s", key, e)
+    return default
+
+
+def set_app_setting(key: str, value: str) -> None:
+    """Store or update an application setting value."""
+    now_str = datetime.now(timezone.utc).isoformat()
+    try:
+        with connect() as con:
+            con.execute(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, value, now_str),
+            )
+            con.commit()
+    except Exception as e:
+        logger.warning("Could not persist app setting '%s': %s", key, e)
+
+
+def delete_app_setting(key: str) -> None:
+    """Delete an application setting by key."""
+    try:
+        with connect() as con:
+            con.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+            con.commit()
+    except Exception as e:
+        logger.warning("Could not delete app setting '%s': %s", key, e)

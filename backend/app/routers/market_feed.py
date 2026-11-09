@@ -11,6 +11,7 @@ from app.schemas.upstox_market import (
     LiveFeedStatus,
     LiveQuote,
     LiveQuotesResponse,
+    MarketDataHealthDiagnostics,
     SubscribeRequest,
 )
 from app.services.upstox_market_service import get_upstox_market_service
@@ -19,6 +20,19 @@ from app.services.upstox_ws_client import get_upstox_ws_client
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["live-market-feed"])
+
+
+@router.get("/api/health/market-data", response_model=MarketDataHealthDiagnostics)
+def get_market_data_health():
+    """
+    Diagnostic health check for Upstox Market Data Feed V3 (Phase 8).
+    
+    Provides real-time inspection of backend lifecycle, Upstox authentication,
+    WebSocket connection state, Protobuf decoder health, subscribed instruments,
+    market hours status, and data freshness.
+    """
+    client = get_upstox_ws_client()
+    return client.get_diagnostics()
 
 
 @router.get("/api/market/live/status", response_model=LiveFeedStatus)

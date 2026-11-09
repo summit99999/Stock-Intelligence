@@ -273,7 +273,7 @@ export default function UnifiedResearchDashboardView({
   const fetchSavedNotes = async (sym?: string) => {
     try {
       const url = sym ? `/api/research/notes/${sym}` : `/api/research/notes/RELIANCE`;
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (res.ok) setSavedNotes(await res.json());
     } catch (e) {
       console.error("Error loading notes:", e);

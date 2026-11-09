@@ -52,3 +52,27 @@ class LiveQuotesResponse(BaseModel):
     quotes: dict[str, LiveQuote] = Field(default_factory=dict, description="Map of symbol -> LiveQuote")
     source: str = Field("LIVE", description="Predominant source: LIVE or DEMO")
     count: int = 0
+
+
+class MarketDataHealthDiagnostics(BaseModel):
+    """Safe diagnostic response for GET /api/health/market-data (Phase 8)."""
+    status: str = Field("healthy", description="healthy | degraded | unhealthy")
+    backend_status: str = Field("connected", description="Backend service lifecycle status")
+    upstox_authentication: str = Field(..., description="AUTHENTICATED | AUTHENTICATION_REQUIRED | EXPIRED")
+    upstox_websocket: str = Field(..., description="CONNECTED | CONNECTING | DISCONNECTED | DISABLED")
+    frontend_websocket: str = Field("connected", description="connected | idle")
+    frontend_websocket_clients: int = Field(0, description="Active frontend WebSocket clients")
+    protobuf_decoder: str = Field("SUCCESS", description="SUCCESS | IDLE | ERROR")
+    subscription_status: str = Field("ACTIVE", description="ACTIVE | IDLE | EMPTY")
+    subscribed_instruments: int = Field(0, description="Number of subscribed instruments")
+    subscribed_symbols: list[str] = Field(default_factory=list, description="Subscribed trading symbols")
+    last_message_received: Optional[str] = Field(None, description="ISO timestamp of last message received")
+    last_message_processed: Optional[str] = Field(None, description="ISO timestamp of last message processed")
+    ticks_received_count: int = Field(0, description="Cumulative tick count")
+    market_status: str = Field("CLOSED", description="OPEN | CLOSED | PRE_OPEN")
+    market_status_note: str = Field(..., description="Human-readable market hours status")
+    data_freshness: str = Field("SESSION_CLOSE", description="FRESH | STALE | SESSION_CLOSE")
+    last_tick: Optional[dict] = Field(None, description="Safe summary of last received tick")
+    last_error: Optional[str] = Field(None, description="Diagnostic error details if any")
+    server_time_ist: str = Field(..., description="Current server time in IST")
+    database_persisted: bool = Field(True, description="Whether token persistence in database is operational")

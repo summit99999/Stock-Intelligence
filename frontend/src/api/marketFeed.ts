@@ -39,6 +39,29 @@ export interface LiveQuotesResponse {
   count: number;
 }
 
+export interface MarketDataHealthDiagnostics {
+  status: "healthy" | "degraded" | "unhealthy";
+  backend_status: string;
+  upstox_authentication: "AUTHENTICATED" | "AUTHENTICATION_REQUIRED" | "EXPIRED";
+  upstox_websocket: "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "DISABLED";
+  frontend_websocket: string;
+  frontend_websocket_clients: number;
+  protobuf_decoder: "SUCCESS" | "IDLE" | "ERROR";
+  subscription_status: "ACTIVE" | "IDLE" | "EMPTY";
+  subscribed_instruments: number;
+  subscribed_symbols: string[];
+  last_message_received?: string;
+  last_message_processed?: string;
+  ticks_received_count: number;
+  market_status: "OPEN" | "CLOSED" | "PRE_OPEN";
+  market_status_note: string;
+  data_freshness: "FRESH" | "STALE" | "SESSION_CLOSE";
+  last_tick?: Record<string, any>;
+  last_error?: string;
+  server_time_ist: string;
+  database_persisted: boolean;
+}
+
 import { getApiBaseUrl } from "./config";
 import { apiFetch } from "./client";
 
@@ -58,6 +81,14 @@ export async function fetchLiveFeedStatus(): Promise<LiveFeedStatus> {
   const res = await apiFetch(`/api/market/live/status`);
   if (!res.ok) {
     throw new Error(`Failed to fetch live feed status: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchMarketDataHealth(): Promise<MarketDataHealthDiagnostics> {
+  const res = await apiFetch(`/api/health/market-data`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch market data diagnostics: ${res.statusText}`);
   }
   return res.json();
 }

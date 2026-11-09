@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-const API_BASE = "";
+
+import { apiJson } from "../api/client";
 
 interface Stock {
   symbol: string;
@@ -87,9 +88,9 @@ interface DashboardHomeProps {
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
-  if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
-  return response.json() as Promise<T>;
+  return apiJson<T>(path);
+
+
 }
 
 function EmptyState({ reason }: { reason: string }) {

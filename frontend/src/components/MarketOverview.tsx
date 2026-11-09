@@ -179,10 +179,11 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
 
     return list.map((s) => {
       const q = liveQuotes[s.symbol];
-      if (q && q.ltp) {
+      const price = q ? (q.ltp || q.close) : null;
+      if (q && price) {
         return {
           ...s,
-          close: q.ltp,
+          close: price,
           daily_change_pct: q.change_percent ?? s.daily_change_pct,
         };
       }

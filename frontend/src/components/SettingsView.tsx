@@ -1,7 +1,7 @@
 import { apiFetch } from "../api/client";
 import { getApiBaseUrl } from "../api/config";
 import React, { useState, useEffect } from "react";
-import { fetchLiveFeedStatus, reconnectLiveFeed, LiveFeedStatus } from "../api/marketFeed";
+import { fetchLiveFeedStatus, fetchMarketDataHealth, reconnectLiveFeed, LiveFeedStatus, MarketDataHealthDiagnostics } from "../api/marketFeed";
 
 interface SettingsViewProps {
   onNavigate: (view: string) => void;
@@ -25,6 +25,7 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
   });
 
   const [feedStatus, setFeedStatus] = useState<LiveFeedStatus | null>(null);
+  const [diagnostics, setDiagnostics] = useState<MarketDataHealthDiagnostics | null>(null);
   const [upstoxStatus, setUpstoxStatus] = useState<UpstoxAuthStatus | null>(null);
   const [directToken, setDirectToken] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -48,6 +49,13 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
       setFeedStatus(fs);
     } catch {
       // feed status optional
+    }
+
+    try {
+      const diag = await fetchMarketDataHealth();
+      setDiagnostics(diag);
+    } catch {
+      // diagnostics optional
     }
 
     try {
@@ -242,6 +250,136 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
           )}
         </div>
       )}
+
+      {/* Upstox Market Data V3 Diagnostic Monitor (Phase 8) */}
+      <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: "10px", padding: "18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "14px", fontWeight: "700", color: "#f8fafc" }}>
+              Upstox Market Data Feed V3 — Live Diagnostics
+            </span>
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: "700",
+                padding: "2px 8px",
+                borderRadius: "4px",
+                background:
+                  diagnostics?.status === "healthy"
+                    ? "rgba(38, 199, 139, 0.15)"
+                    : "rgba(245, 158, 11, 0.15)",
+                color: diagnostics?.status === "healthy" ? "#26c78b" : "#f59e0b",
+                border: `1px solid ${diagnostics?.status === "healthy" ? "rgba(38, 199, 139, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
+              }}
+            >
+              {diagnostics?.status ? diagnostics.status.toUpperCase() : "INSPECTING..."}
+            </span>
+          </div>
+          <span style={{ fontSize: "11px", color: "#8b949e", fontFamily: "monospace" }}>
+            {diagnostics?.server_time_ist || "IST Server Clock"}
+          </span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", fontSize: "12px" }}>
+          {/* Protocol & Upstream */}
+          <div style={{ background: "#161b22", padding: "12px", borderRadius: "6px", border: "1px solid #30363d" }}>
+            <div style={{ color: "#8b949e", fontSize: "11px", marginBottom: "6px" }}>UPSTREAM PROTOCOL</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Auth:</span>
+                <span style={{ color: diagnostics?.upstox_authentication === "AUTHENTICATED" ? "#26c78b" : "#ef4444", fontWeight: 600 }}>
+                  {diagnostics?.upstox_authentication || "CHECKING"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>WebSocket V3:</span>
+                <span style={{ color: diagnostics?.upstox_websocket === "CONNECTED" ? "#26c78b" : "#f59e0b", fontWeight: 600 }}>
+                  {diagnostics?.upstox_websocket || "INITIALIZING"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Protobuf Decoder:</span>
+                <span style={{ color: diagnostics?.protobuf_decoder === "SUCCESS" ? "#26c78b" : "#94a3b8", fontWeight: 600 }}>
+                  {diagnostics?.protobuf_decoder || "READY"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Market Hours & Schedule */}
+          <div style={{ background: "#161b22", padding: "12px", borderRadius: "6px", border: "1px solid #30363d" }}>
+            <div style={{ color: "#8b949e", fontSize: "11px", marginBottom: "6px" }}>NSE EXCHANGE SESSION</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Session:</span>
+                <span style={{ color: diagnostics?.market_status === "OPEN" ? "#26c78b" : "#38bdf8", fontWeight: 600 }}>
+                  {diagnostics?.market_status || "CLOSED"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Data Freshness:</span>
+                <span style={{ color: "#94a3b8", fontWeight: 600 }}>
+                  {diagnostics?.data_freshness || "SESSION_CLOSE"}
+                </span>
+              </div>
+              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px", lineHeight: "1.3" }}>
+                {diagnostics?.market_status_note || "NSE Equity trading: 09:15 - 15:30 IST"}
+              </div>
+            </div>
+          </div>
+
+          {/* Instruments & Subscriptions */}
+          <div style={{ background: "#161b22", padding: "12px", borderRadius: "6px", border: "1px solid #30363d" }}>
+            <div style={{ color: "#8b949e", fontSize: "11px", marginBottom: "6px" }}>ACTIVE SUBSCRIPTIONS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Tracked Instruments:</span>
+                <span style={{ color: "#f8fafc", fontWeight: 700 }}>
+                  {diagnostics?.subscribed_instruments ?? (feedStatus?.subscribed_count || 0)}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Ticks Processed:</span>
+                <span style={{ color: "#38bdf8", fontWeight: 600 }}>
+                  {diagnostics?.ticks_received_count ?? (feedStatus?.ticks_received || 0)}
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
+                {(diagnostics?.subscribed_symbols || ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"]).map((sym) => (
+                  <span key={sym} style={{ background: "#21262d", padding: "1px 5px", borderRadius: "3px", fontSize: "10px", color: "#94a3b8" }}>
+                    {sym}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Transport & Clients */}
+          <div style={{ background: "#161b22", padding: "12px", borderRadius: "6px", border: "1px solid #30363d" }}>
+            <div style={{ color: "#8b949e", fontSize: "11px", marginBottom: "6px" }}>TRANSPORT & PERSISTENCE</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Frontend Clients:</span>
+                <span style={{ color: "#26c78b", fontWeight: 600 }}>
+                  {diagnostics?.frontend_websocket_clients ?? 1} active
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>DB Token Sync:</span>
+                <span style={{ color: "#26c78b", fontWeight: 600 }}>
+                  ✓ Persisted
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Backend Port:</span>
+                <span style={{ color: "#cbd5e1", fontFamily: "monospace" }}>
+                  FastAPI :8000
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Settings Sections */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>

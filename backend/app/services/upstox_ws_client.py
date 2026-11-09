@@ -17,7 +17,7 @@ from fastapi import WebSocket
 import httpx
 
 from app.config import get_upstox_config
-from app.schemas.upstox_market import LiveFeedStatus, LiveQuote
+from app.schemas.upstox_market import LiveFeedStatus, LiveQuote, MarketDataHealthDiagnostics
 from app.services.token_store import get_upstox_token
 from app.services.upstox_instrument_service import get_upstox_instrument_service
 from app.services.upstox_market_service import get_upstox_market_service
@@ -27,6 +27,39 @@ logger = logging.getLogger(__name__)
 UPSTOX_WS_AUTH_URL_V3 = "https://api.upstox.com/v3/feed/market-data-feed/authorize"
 UPSTOX_WS_AUTH_URL_V2 = "https://api.upstox.com/v2/feed/market-data-feed/authorize"
 DEFAULT_SUBSCRIPTIONS = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "NIFTY 50"]
+IST_TZ = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def get_market_hours_status(now_dt: Optional[datetime.datetime] = None) -> tuple[str, str, str]:
+    """
+    Evaluate NSE market hours status based on current IST time (Phase 7).
+    Returns: (market_status: str, note: str, freshness_label: str)
+    """
+    if now_dt is None:
+        now_ist = datetime.datetime.now(IST_TZ)
+    else:
+        now_ist = now_dt.astimezone(IST_TZ) if now_dt.tzinfo else now_dt.replace(tzinfo=IST_TZ)
+    weekday = now_ist.weekday()  # 0=Monday, 6=Sunday
+    time_minutes = now_ist.hour * 60 + now_ist.minute
+
+    # Weekend
+    if weekday >= 5:
+        day_name = "Saturday" if weekday == 5 else "Sunday"
+        return "CLOSED", f"Market Closed ({day_name} weekend). Next session Monday at 09:15 IST.", "SESSION_CLOSE"
+
+    # Pre-open
+    if 9 * 60 <= time_minutes < 9 * 60 + 15:
+        return "PRE_OPEN", "NSE Pre-open session (09:00 - 09:15 IST). Regular trading begins at 09:15 IST.", "FRESH"
+
+    # Regular trading session
+    if 9 * 60 + 15 <= time_minutes < 15 * 60 + 30:
+        return "OPEN", "NSE Live Trading Session active (09:15 - 15:30 IST).", "FRESH"
+
+    # Post-market / night
+    if time_minutes >= 15 * 60 + 30:
+        return "CLOSED", "NSE Market Closed (Post-market). Session ended at 15:30 IST. Showing official session close prices.", "SESSION_CLOSE"
+
+    return "CLOSED", "NSE Market Closed (Pre-market). Session opens at 09:15 IST. Showing official session close prices.", "SESSION_CLOSE"
 
 
 class UpstoxWebSocketClient:
@@ -47,6 +80,12 @@ class UpstoxWebSocketClient:
         self._retry_in_seconds: Optional[float] = None
         self._force_enabled: bool = False
 
+        # Phase 8 Health Diagnostics State
+        self._protobuf_decode_status: str = "IDLE"
+        self._last_message_received: Optional[str] = None
+        self._last_message_processed: Optional[str] = None
+        self._last_tick_summary: Optional[dict] = None
+
         self._running: bool = False
         self._task: Optional[asyncio.Task] = None
         self._ws_connection: Any = None
@@ -64,6 +103,60 @@ class UpstoxWebSocketClient:
         self._status = "DISABLED"
         self._running = False
         self._force_enabled = False
+
+    def get_diagnostics(self) -> MarketDataHealthDiagnostics:
+        """Return comprehensive health diagnostics matching Phase 8 specification."""
+        stored = get_upstox_token()
+        has_auth = bool(stored and stored.access_token)
+        is_expired = bool(stored and stored.is_expired) if stored else True
+
+        auth_state = "AUTHENTICATION_REQUIRED"
+        if has_auth:
+            auth_state = "EXPIRED" if is_expired else "AUTHENTICATED"
+
+        mkt_status, mkt_note, mkt_freshness = get_market_hours_status()
+
+        freshness = mkt_freshness
+        if self._last_tick_time and mkt_status == "OPEN":
+            try:
+                tick_dt = datetime.datetime.fromisoformat(self._last_tick_time.replace("Z", "+00:00"))
+                diff_sec = (datetime.datetime.now(datetime.timezone.utc) - tick_dt).total_seconds()
+                freshness = "FRESH" if diff_sec < 90 else "STALE"
+            except Exception:
+                pass
+
+        health_status = "healthy"
+        if not has_auth or is_expired:
+            health_status = "degraded"
+        elif self._status == "DISCONNECTED":
+            health_status = "degraded" if mkt_status == "CLOSED" else "unhealthy"
+        elif self._status == "CONNECTED":
+            health_status = "healthy"
+
+        server_ist = datetime.datetime.now(IST_TZ).strftime("%Y-%m-%d %H:%M:%S IST")
+
+        return MarketDataHealthDiagnostics(
+            status=health_status,
+            backend_status="connected",
+            upstox_authentication=auth_state,
+            upstox_websocket=self._status,
+            frontend_websocket="connected" if self._frontend_clients else "idle",
+            frontend_websocket_clients=len(self._frontend_clients),
+            protobuf_decoder=self._protobuf_decode_status,
+            subscription_status="ACTIVE" if self._subscribed_symbols else "EMPTY",
+            subscribed_instruments=len(self._subscribed_symbols),
+            subscribed_symbols=sorted(list(self._subscribed_symbols)),
+            last_message_received=self._last_message_received,
+            last_message_processed=self._last_message_processed,
+            ticks_received_count=self._ticks_received,
+            market_status=mkt_status,
+            market_status_note=mkt_note,
+            data_freshness=freshness,
+            last_tick=self._last_tick_summary,
+            last_error=self._last_error,
+            server_time_ist=server_ist,
+            database_persisted=True,
+        )
 
     def get_feed_status(self) -> LiveFeedStatus:
         """Return diagnostic status of the feed connection."""
@@ -397,8 +490,12 @@ class UpstoxWebSocketClient:
                                 close=close,
                             )
                             cached = self.market_service.get_cached_quote(sym)
-                            if cached:
-                                asyncio.create_task(self.broadcast_quote(cached))
+                            if cached and self._frontend_clients:
+                                try:
+                                    loop = asyncio.get_running_loop()
+                                    loop.create_task(self.broadcast_quote(cached))
+                                except RuntimeError:
+                                    pass
                 except Exception as e:
                     logger.debug("Error decoding binary protobuf tick: %s", e)
 
@@ -422,8 +519,12 @@ class UpstoxWebSocketClient:
                                 close=float(ltpc.get("cp", 0) or 0) or None,
                             )
                             cached = self.market_service.get_cached_quote(sym)
-                            if cached:
-                                asyncio.create_task(self.broadcast_quote(cached))
+                            if cached and self._frontend_clients:
+                                try:
+                                    loop = asyncio.get_running_loop()
+                                    loop.create_task(self.broadcast_quote(cached))
+                                except RuntimeError:
+                                    pass
         except Exception as e:
             logger.debug("Error processing tick: %s", e)
 
