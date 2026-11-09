@@ -63,7 +63,7 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
     }
   };
 
-  const handleSaveDirectToken = async () => {
+  const handleSaveDirectToken = async (force: boolean = false) => {
     if (!directToken.trim()) {
       setErrorMessage("Please enter an Upstox access token.");
       return;
@@ -77,7 +77,7 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
       const res = await apiFetch("/api/upstox/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: directToken.trim() }),
+        body: JSON.stringify({ access_token: directToken.trim(), force }),
       });
 
       if (!res.ok) {
@@ -217,8 +217,29 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
       )}
 
       {errorMessage && (
-        <div style={{ background: "#3b1e22", border: "1px solid #7f1d1d", padding: "10px 14px", borderRadius: "6px", fontSize: "12px", color: "#fca5a5" }}>
-          ⚠ {errorMessage}
+        <div style={{ background: "#3b1e22", border: "1px solid #7f1d1d", padding: "12px 14px", borderRadius: "6px", fontSize: "12px", color: "#fca5a5", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div>⚠ {errorMessage}</div>
+          {directToken.trim() && (
+            <div>
+              <button
+                onClick={() => handleSaveDirectToken(true)}
+                disabled={tokenSubmitting}
+                style={{
+                  background: "rgba(245, 158, 11, 0.2)",
+                  border: "1px solid #f59e0b",
+                  color: "#fde047",
+                  borderRadius: "6px",
+                  padding: "6px 12px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+                title="Bypass upstream live check and save token immediately"
+              >
+                ⚡ Connect Anyway (Save & Bypass Live API Check)
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -356,7 +377,7 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
                 }}
               />
               <button
-                onClick={handleSaveDirectToken}
+                onClick={() => handleSaveDirectToken(false)}
                 disabled={tokenSubmitting || !directToken.trim()}
                 style={{
                   background: "#16a34a",
@@ -372,6 +393,10 @@ export default function SettingsView({ onNavigate }: SettingsViewProps) {
                 {tokenSubmitting ? "Validating..." : "Save & Connect"}
               </button>
             </div>
+            <small style={{ fontSize: "11px", color: "#64748b", lineHeight: "1.4" }}>
+              • Must be a JWT token starting with <code>eyJ...</code> (not an authorization code).<br />
+              • Daily tokens expire at 3:30 AM IST. For a 1-year token, generate an <strong>Analytics Token</strong> in Developer Console &gt; Your App &gt; Analytics tab.
+            </small>
           </div>
 
           {/* Action Buttons */}

@@ -40,6 +40,7 @@ class UpstoxDirectTokenRequest(BaseModel):
     """Direct manual entry of an Upstox daily access token."""
 
     access_token: str
+    force: bool = False
 
 
 class UpstoxAuthResponse(BaseModel):

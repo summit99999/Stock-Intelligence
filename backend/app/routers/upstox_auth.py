@@ -65,7 +65,7 @@ async def oauth_callback(req: UpstoxCallbackRequest):
 async def set_direct_token(req: UpstoxDirectTokenRequest):
     """Validate and securely store a manually provided Upstox access token."""
     service = get_upstox_auth_service()
-    res = await service.validate_and_save_direct_token(req.access_token)
+    res = await service.validate_and_save_direct_token(req.access_token, force=req.force)
     if not res.success:
         raise HTTPException(status_code=400, detail=res.message)
     return res

@@ -135,6 +135,29 @@ class TestUpstoxAuthService:
         assert res.success is False
         assert "cannot be empty" in res.message.lower()
 
+    def test_validate_and_save_direct_token_non_jwt(self):
+        service = UpstoxAuthService()
+        res = run_coro(service.validate_and_save_direct_token("some_short_code_12345"))
+        assert res.success is False
+        assert "not a valid" in res.message.lower()
+
+    def test_validate_and_save_direct_token_forced_jwt(self):
+        import base64, json
+        h = base64.urlsafe_b64encode(json.dumps({"alg": "HS256"}).encode()).decode().rstrip("=")
+        p = base64.urlsafe_b64encode(json.dumps({"user_id": "U444", "user_name": "Pro Trader"}).encode()).decode().rstrip("=")
+        mock_jwt = f"{h}.{p}.signature"
+
+        service = UpstoxAuthService()
+        with patch("app.services.token_store._keyring_available", return_value=False):
+            res = run_coro(service.validate_and_save_direct_token(mock_jwt, force=True))
+            assert res.success is True
+            assert res.user_id == "U444"
+            assert res.user_name == "Pro Trader"
+
+            stored = get_upstox_token()
+            assert stored is not None
+            assert stored.access_token == mock_jwt
+
     def test_status_reporting(self):
         service = UpstoxAuthService()
         with patch("app.services.token_store._keyring_available", return_value=False):
