@@ -11,7 +11,10 @@ import {
   ISeriesApi,
   Time,
   LineStyle,
+  createSeriesMarkers,
 } from "lightweight-charts";
+import PineScriptEditor from "./PineScriptEditor";
+import { PineExecutionResult } from "../services/pineScriptEngine";
 
 export interface CandleBar {
   timestamp?: string;
@@ -56,6 +59,11 @@ export default function TradingViewChart({
   // Overlay price lines ref (Order Blocks, S/R, Key Levels)
   const overlayPriceLinesRef = useRef<any[]>([]);
 
+  // Pine Script Dynamic Series, Price Lines & Markers Refs
+  const customPineSeriesRefs = useRef<ISeriesApi<"Line">[]>([]);
+  const customPinePriceLinesRef = useRef<any[]>([]);
+  const customPineMarkersPluginRef = useRef<any>(null);
+
   // State
   const [bars, setBars] = useState<CandleBar[]>([]);
   const [analysisData, setAnalysisData] = useState<any>(null);
@@ -83,6 +91,10 @@ export default function TradingViewChart({
   const [showTrendlines, setShowTrendlines] = useState(false);
   const [showVolProfileSidebar, setShowVolProfileSidebar] = useState(false);
   const [showSetupsDrawer, setShowSetupsDrawer] = useState(false);
+
+  // Pine Script Editor State
+  const [showPineEditor, setShowPineEditor] = useState<boolean>(false);
+  const [activePineResult, setActivePineResult] = useState<PineExecutionResult | null>(null);
 
   // Hovered candle stats
   const [hoveredCandle, setHoveredCandle] = useState<CandleBar | null>(null);
@@ -569,6 +581,129 @@ export default function TradingViewChart({
     overlayPriceLinesRef.current = newLines;
   }, [analysisData, showOB, showFVG, showSR, showKeyLevels, showStructure]);
 
+  // Render Custom Pine Script Indicators on Chart
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current) return;
+
+    // 1. Clear previous custom Pine series
+    for (const s of customPineSeriesRefs.current) {
+      try {
+        chartRef.current.removeSeries(s);
+      } catch {}
+    }
+    customPineSeriesRefs.current = [];
+
+    // 2. Clear previous custom Pine price lines
+    for (const pl of customPinePriceLinesRef.current) {
+      try {
+        candleSeriesRef.current.removePriceLine(pl);
+      } catch {}
+    }
+    customPinePriceLinesRef.current = [];
+
+    // 3. Clear previous custom Pine markers
+    if (customPineMarkersPluginRef.current) {
+      try {
+        customPineMarkersPluginRef.current.setMarkers([]);
+      } catch {}
+    }
+
+    if (!activePineResult || !activePineResult.success) return;
+
+    // 4. Render Plots as LineSeries
+    for (const plot of activePineResult.plots) {
+      if (!plot.data || plot.data.length === 0) continue;
+      try {
+        const lineSeries = chartRef.current.addSeries(LineSeries, {
+          color: plot.color,
+          lineWidth: (plot.lineWidth as any) || 2,
+          priceLineVisible: false,
+          title: plot.title,
+        });
+
+        const formattedData = plot.data
+          .map((d) => ({
+            time: (d.time.length > 10 ? d.time : d.time.slice(0, 10)) as Time,
+            value: d.value,
+          }))
+          .sort((a, b) => (a.time > b.time ? 1 : -1));
+
+        lineSeries.setData(formattedData);
+        customPineSeriesRefs.current.push(lineSeries);
+      } catch (e) {
+        console.warn("Could not add Pine plot series:", e);
+      }
+    }
+
+    // 5. Render Horizontal Price Lines
+    for (const hl of activePineResult.hlines) {
+      try {
+        const pLine = candleSeriesRef.current.createPriceLine({
+          price: hl.price,
+          color: hl.color,
+          lineWidth: (hl.lineWidth as any) || 1,
+          lineStyle: hl.lineStyle === "dashed" ? LineStyle.Dashed : LineStyle.Solid,
+          axisLabelVisible: true,
+          title: hl.title,
+        });
+        customPinePriceLinesRef.current.push(pLine);
+      } catch (e) {
+        console.warn("Could not add Pine hline:", e);
+      }
+    }
+
+    // 6. Render Box Price Boundaries
+    for (const box of activePineResult.boxes) {
+      try {
+        const topL = candleSeriesRef.current.createPriceLine({
+          price: box.topPrice,
+          color: box.borderColor,
+          lineWidth: 1,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: `${box.label || "Zone"} High`,
+        });
+        const btmL = candleSeriesRef.current.createPriceLine({
+          price: box.bottomPrice,
+          color: box.borderColor,
+          lineWidth: 1,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: `${box.label || "Zone"} Low`,
+        });
+        customPinePriceLinesRef.current.push(topL, btmL);
+      } catch (e) {
+        console.warn("Could not add Pine box price lines:", e);
+      }
+    }
+
+    // 7. Render Markers (Shapes / Arrows / Labels)
+    if (activePineResult.markers && activePineResult.markers.length > 0) {
+      try {
+        const formattedMarkers = activePineResult.markers
+          .map((m) => ({
+            time: (m.time.length > 10 ? m.time : m.time.slice(0, 10)) as Time,
+            position: m.position,
+            color: m.color,
+            shape: m.shape,
+            text: m.text || "",
+          }))
+          .sort((a, b) => (a.time > b.time ? 1 : -1));
+
+        if (!customPineMarkersPluginRef.current && candleSeriesRef.current) {
+          customPineMarkersPluginRef.current = createSeriesMarkers(
+            candleSeriesRef.current,
+            formattedMarkers
+          );
+        } else if (customPineMarkersPluginRef.current) {
+          customPineMarkersPluginRef.current.setMarkers(formattedMarkers);
+        }
+      } catch (e) {
+        console.warn("Could not set Pine markers:", e);
+      }
+    }
+  }, [activePineResult, bars]);
+
   const activeCandle = hoveredCandle || (bars.length > 0 ? bars[bars.length - 1] : null);
   const priceChange = activeCandle && activeCandle.open ? activeCandle.close - activeCandle.open : 0;
   const priceChangePct = activeCandle && activeCandle.open ? (priceChange / activeCandle.open) * 100 : 0;
@@ -967,6 +1102,43 @@ export default function TradingViewChart({
             📊 Vol Profile
           </button>
 
+          {/* Pine Script Editor Toggle */}
+          <button
+            onClick={() => setShowPineEditor(!showPineEditor)}
+            style={{
+              background: showPineEditor
+                ? "#10b981"
+                : activePineResult
+                ? "rgba(16, 185, 129, 0.2)"
+                : "#16202e",
+              color: showPineEditor ? "#ffffff" : activePineResult ? "#34d399" : "#8c9bb0",
+              border: activePineResult ? "1px solid #10b981" : "1px solid #28394e",
+              padding: "4px 10px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+            }}
+            title="Open Pine Script Editor to code & test custom indicators"
+          >
+            <span>🌲</span>
+            <span>Pine Editor</span>
+            {activePineResult && (
+              <span
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: "#10b981",
+                  display: "inline-block",
+                }}
+              />
+            )}
+          </button>
+
           {/* Fullscreen */}
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1241,6 +1413,14 @@ export default function TradingViewChart({
           ))}
         </div>
       )}
+
+      {/* Embedded Pine Script Editor Panel */}
+      <PineScriptEditor
+        bars={bars}
+        isOpen={showPineEditor}
+        onApply={(result) => setActivePineResult(result)}
+        onClose={() => setShowPineEditor(false)}
+      />
     </div>
   );
 }
