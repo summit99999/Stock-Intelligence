@@ -82,7 +82,7 @@ class TestDhanInstrumentService:
         assert "TCS" in symbols
         assert "HDFCBANK" in symbols
         assert "INFY" in symbols
-        assert "LTIM" in symbols
+        assert "LTM" in symbols
 
     def test_rest_payload_builder(self):
         svc = get_instrument_service()

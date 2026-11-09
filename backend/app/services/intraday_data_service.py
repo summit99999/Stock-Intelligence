@@ -66,6 +66,7 @@ from app.services.trading_calendar_service import (
     STANDARD_SESSION_BARS_5M,
     CAS_CONTINUOUS_BARS_5M,
     MIN_REGULAR_SESSION_BARS_5M,
+    CASSymbolScheduleVersion,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,13 +88,13 @@ def _set_yfinance_last_request(request_time: float) -> None:
     global _YFINANCE_LAST_REQUEST
     _YFINANCE_LAST_REQUEST = request_time
 
-# Canonical Tracked Universe (31 tracked NSE equities in current database)
+# Canonical Tracked Universe (31 tracked NSE equities in current database, with active symbols)
 TRACKED_NSE_SYMBOLS = [
     "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
-    "HINDUNILVR", "SUNPHARMA", "TATAMOTORS", "BHARTIARTL", "WIPRO",
+    "HINDUNILVR", "SUNPHARMA", "TMPV", "BHARTIARTL", "WIPRO",
     "BAJFINANCE", "LT", "MARUTI", "ASIANPAINT", "TITAN",
     "SBIN", "HCLTECH", "ADANIENT", "POWERGRID", "TRENT",
-    "BEL", "HAL", "ONGC", "LTIM", "COALINDIA",
+    "BEL", "HAL", "ONGC", "LTM", "COALINDIA",
     "POLYCAB", "DIXON", "DEEPAKNTR", "CDSL", "KPITTECH", "TATAELXSI"
 ]
 
@@ -623,7 +624,18 @@ class YFinanceIntradayAdapter(IntradayProviderAdapter):
     ) -> ProviderFetchResult:
         run_id = str(uuid.uuid4())
         requested_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        prov_sym = f"{symbol.upper().strip()}.NS"
+        from app.services.instrument_master_service import get_instrument_master_service
+        inst_svc = get_instrument_master_service()
+        resolved_prov_sym = inst_svc.get_provider_symbol(symbol, provider="yfinance")
+        prov_sym = resolved_prov_sym or f"{symbol.upper().strip()}.NS"
+
+        if not resolved_prov_sym and inst_svc.resolve_instrument(symbol):
+            return ProviderFetchResult(
+                False, "PROVIDER_MAPPING_UNAVAILABLE", self.provider_name, symbol, interval, [],
+                prov_sym, run_id, requested_at,
+                error_message=f"Instrument {symbol} is marked UNAVAILABLE for provider {self.provider_name}.",
+            )
+
         if interval != "5m":
             return ProviderFetchResult(
                 False, "UNSUPPORTED_INTERVAL", self.provider_name, symbol, interval, [],
@@ -1220,10 +1232,18 @@ def get_intraday_ingestion_status(allow_synthetic: bool = False) -> Dict[str, An
 
         total_valid = len(observed_valid_sessions) + len(synthetic_valid_sessions)
 
-        is_cas, cas_reason = is_cas_eligible_security(sym, latest_bar or datetime.now(timezone.utc))
+        ref_date = latest_bar or datetime.now(timezone.utc)
+        is_cas, cas_reason = is_cas_eligible_security(sym, ref_date)
+        from app.services.trading_calendar_service import get_expected_session_schedule
+        sched = get_expected_session_schedule(sym, ref_date)
+        sched_ver = sched.get("schedule_version", "STANDARD_SCHEDULE")
+        exp_cont_bars = sched.get("expected_continuous_bars", 75)
+        cont_cutoff = sched.get("continuous_end_time", "15:30:00")
+        tod_avail = len(observed_valid_sessions) >= MIN_REQUIRED_SESSIONS
 
         symbol_stats.append({
             "symbol": sym,
+            "provider_symbol": f"{sym}.NS",
             "bar_count": n_bars,
             "observed_bars_count": sym_obs_bars,
             "synthetic_bars_count": sym_syn_bars,
@@ -1233,6 +1253,7 @@ def get_intraday_ingestion_status(allow_synthetic: bool = False) -> Dict[str, An
             "observed_valid_sessions_count": len(observed_valid_sessions),
             "synthetic_valid_sessions_count": len(synthetic_valid_sessions),
             "truncated_sessions_count": len(truncated_sessions),
+            "incomplete_sessions_count": len(truncated_sessions),
             "holiday_sessions_count": len(holiday_sessions),
             "source_classification": overall_sym_source,
             "production_ready": has_obs_min,
@@ -1240,11 +1261,14 @@ def get_intraday_ingestion_status(allow_synthetic: bool = False) -> Dict[str, An
             "meets_target_lookback": total_valid >= TARGET_LOOKBACK_SESSIONS,
             "has_min_observed_sessions": has_obs_min,
             "meets_observed_target": has_obs_target,
+            "tod_rvol_available": tod_avail,
+            "schedule_version": sched_ver,
+            "continuous_cutoff_time": cont_cutoff,
             "earliest_bar": earliest_bar,
             "latest_bar": latest_bar,
             "status": status_str,
             "is_cas_eligible": is_cas,
-            "expected_continuous_bars": CAS_CONTINUOUS_BARS_5M if is_cas else STANDARD_SESSION_BARS_5M,
+            "expected_continuous_bars": exp_cont_bars,
             "cas_reason": cas_reason,
         })
 
@@ -1261,23 +1285,55 @@ def get_intraday_ingestion_status(allow_synthetic: bool = False) -> Dict[str, An
 
     bar_prov_count = 0
     ingestion_runs_count = 0
+    last_success_ts = None
+    failed_runs_count = 0
     try:
         with connect() as con:
             bar_prov_count = con.execute("SELECT COUNT(*) FROM bar_provenance").fetchone()[0]
             ingestion_runs_count = con.execute("SELECT COUNT(*) FROM intraday_ingestion_runs").fetchone()[0]
+            row_succ = con.execute(
+                "SELECT retrieval_timestamp FROM intraday_ingestion_runs "
+                "WHERE data_quality_status = 'VERIFIED_OBSERVED_INTRADAY' "
+                "ORDER BY retrieval_timestamp DESC LIMIT 1"
+            ).fetchone()
+            if row_succ and row_succ[0]:
+                last_success_ts = row_succ[0]
+            row_fail = con.execute(
+                "SELECT COUNT(*) FROM intraday_ingestion_runs "
+                "WHERE data_quality_status != 'VERIFIED_OBSERVED_INTRADAY'"
+            ).fetchone()
+            if row_fail:
+                failed_runs_count = row_fail[0]
     except Exception:
         pass
+
+    symbols_with_obs_history = sum(1 for s in symbol_stats if s.get("observed_bars_count", 0) > 0)
+    symbols_10_obs = sum(1 for s in symbol_stats if s.get("observed_valid_sessions_count", 0) >= 10)
+    symbols_20_obs = sum(1 for s in symbol_stats if s.get("observed_valid_sessions_count", 0) >= 20)
+    complete_sessions_total = sum(s.get("observed_valid_sessions_count", 0) for s in symbol_stats)
+    incomplete_sessions_total = sum(s.get("truncated_sessions_count", 0) for s in symbol_stats)
 
     return {
         "status": prod_status if not allow_synthetic else ("HEALTHY_SYNTHETIC_DEMO" if synthetic_only_symbols > 0 else prod_status),
         "production_status": prod_status,
         "allow_synthetic_active": allow_synthetic,
+        "provider": "yfinance",
+        "data_mode": "OBSERVED_HISTORICAL_INTRADAY" if observed_min_symbols > 0 else "SYNTHETIC_CALIBRATED",
+        "cas_schedule_version": CASSymbolScheduleVersion.CAS_V1_HISTORICAL.value,
         "tracked_symbols_count": len(all_symbols),
         "symbols_with_intraday_data": len(all_symbols) - len(missing_symbols),
-        "symbols_meeting_observed_target": observed_target_symbols,
+        "securities_with_observed_history": symbols_with_obs_history,
+        "symbols_with_observed_history": symbols_with_obs_history,
         "symbols_meeting_observed_min": observed_min_symbols,
+        "symbols_meeting_10_sessions": symbols_10_obs,
+        "symbols_meeting_20_sessions": symbols_20_obs,
+        "symbols_meeting_observed_target": observed_target_symbols,
         "symbols_with_synthetic_only": synthetic_only_symbols,
-        "symbols_meeting_20_session_target": observed_target_symbols if not allow_synthetic else (observed_target_symbols or synthetic_only_symbols),
+        "symbols_meeting_20_session_target": symbols_20_obs if not allow_synthetic else (symbols_20_obs or synthetic_only_symbols),
+        "complete_sessions_count": complete_sessions_total,
+        "incomplete_sessions_count": incomplete_sessions_total,
+        "last_successful_ingestion_time": last_success_ts,
+        "failed_ingestion_attempts": failed_runs_count,
         "coverage_pct": round(coverage_pct, 1),
         "total_5m_bars_stored": total_5m_bars,
         "total_observed_bars": total_observed_bars,

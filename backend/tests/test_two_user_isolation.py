@@ -42,20 +42,25 @@ def create_token(user_id: str, email: str) -> str:
 USER_A_ID = "00000000-0000-0000-0000-aaaaaaaaaaaa"
 USER_B_ID = "11111111-1111-1111-1111-bbbbbbbbbbbb"
 
-TOKEN_A = create_token(USER_A_ID, "alice@example.com")
-TOKEN_B = create_token(USER_B_ID, "bob@example.com")
-
-HEADERS_A = {"Authorization": f"Bearer {TOKEN_A}"}
-HEADERS_B = {"Authorization": f"Bearer {TOKEN_B}"}
+HEADERS_A: dict[str, str] = {}
+HEADERS_B: dict[str, str] = {}
 
 
 @pytest.fixture(autouse=True)
 def configure_test_auth(monkeypatch):
     """Enable cloud authentication mode for all tests in this module."""
+    global HEADERS_A, HEADERS_B
+
     monkeypatch.setenv("SUPABASE_URL", SUPABASE_URL)
     monkeypatch.setenv("SUPABASE_JWT_SECRET", AUTH_SECRET)
     monkeypatch.setattr("app.auth.SUPABASE_URL", SUPABASE_URL)
     monkeypatch.setattr("app.auth.SUPABASE_JWT_SECRET", AUTH_SECRET)
+    HEADERS_A = {
+        "Authorization": f"Bearer {create_token(USER_A_ID, 'alice@example.com')}"
+    }
+    HEADERS_B = {
+        "Authorization": f"Bearer {create_token(USER_B_ID, 'bob@example.com')}"
+    }
 
 
 @pytest.fixture

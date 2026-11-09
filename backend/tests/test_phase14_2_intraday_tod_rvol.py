@@ -39,6 +39,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from fastapi.testclient import TestClient
 
+from app.database import connect
 from app.main import app
 from app.services.intraday_data_service import (
     assess_intraday_data_providers,
@@ -200,10 +201,32 @@ def test_prior_trading_dates_skips_weekends_and_holidays():
 # ---------------------------------------------------------------------------
 
 def test_seed_symbol_intraday_history_and_index():
-    """Verify single symbol seeding and index existence."""
+    """Verify seeding succeeds when safe and observed records are never overwritten."""
     ensure_ohlcv_indexes()
+    with connect() as con:
+        observed_before = con.execute(
+            "SELECT count(*) FROM observed_intraday_ohlcv WHERE symbol = 'INFY' AND interval = '5m'"
+        ).fetchone()[0]
+        provenance_before = con.execute(
+            "SELECT count(*) FROM bar_provenance WHERE symbol = 'INFY' AND interval = '5m' "
+            "AND provenance_classification = 'OBSERVED_HISTORICAL'"
+        ).fetchone()[0]
+
     written = seed_symbol_intraday_history("INFY", num_sessions=20, force=True)
-    assert written == 1500  # 20 sessions * 75 bars = 1500
+    with connect() as con:
+        observed_after = con.execute(
+            "SELECT count(*) FROM observed_intraday_ohlcv WHERE symbol = 'INFY' AND interval = '5m'"
+        ).fetchone()[0]
+        provenance_after = con.execute(
+            "SELECT count(*) FROM bar_provenance WHERE symbol = 'INFY' AND interval = '5m' "
+            "AND provenance_classification = 'OBSERVED_HISTORICAL'"
+        ).fetchone()[0]
+
+    assert (observed_after, provenance_after) == (observed_before, provenance_before)
+    if observed_before or provenance_before:
+        assert written == 0
+    else:
+        assert written == 1500  # 20 sessions * 75 bars = 1500
 
     # Status check
     status = get_intraday_ingestion_status()
@@ -212,9 +235,13 @@ def test_seed_symbol_intraday_history_and_index():
 
     infy_stats = next((s for s in status["symbol_details"] if s["symbol"] == "INFY"), None)
     assert infy_stats is not None
-    assert infy_stats["bar_count"] >= 1500
-    assert infy_stats["valid_sessions_count"] >= 20
-    assert infy_stats["meets_target_lookback"] is True
+    if observed_before or provenance_before:
+        assert infy_stats["bar_count"] > 0
+        assert infy_stats["valid_sessions_count"] > 0
+    else:
+        assert infy_stats["bar_count"] >= 1500
+        assert infy_stats["valid_sessions_count"] >= 20
+        assert infy_stats["meets_target_lookback"] is True
 
 
 # ---------------------------------------------------------------------------

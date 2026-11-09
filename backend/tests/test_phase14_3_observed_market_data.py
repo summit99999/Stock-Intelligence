@@ -4,7 +4,7 @@ Phase 14.3 — Actual Market Data Verification & Synthetic Data Isolation Test S
 Validates:
 1. Strict data source provenance classification (OBSERVED_HISTORICAL, OBSERVED_DELAYED, OBSERVED_LIVE, SYNTHETIC, UNKNOWN).
 2. Year-specific NSE trading exchange calendar (2024, 2025, 2026 holidays and special truncated sessions).
-3. Physical audit of database: verifies 46,500 stored 5m bars are identified as 100% synthetic/calibrated.
+3. Physical audit of database: verifies 46,500 stored 5m bars are synthetic/calibrated and observed records are separately tracked.
 4. Strict synthetic data isolation: True TOD RVOL returns UNAVAILABLE in production mode (allow_synthetic=False).
 5. Explicit demonstration mode: allow_synthetic=True returns calculations strictly badged as SYNTHETIC.
 6. Genuine observed data calculation: verified observed bars compute genuine TOD RVOL without synthetic contamination.
@@ -188,11 +188,14 @@ def test_database_actual_bar_provenance_audit():
             "SELECT COUNT(*) FROM ohlcv WHERE interval = '5m' AND source IN ('yfinance', 'dhan', 'nse_official_historical')"
         ).fetchone()[0]
         assert observed_count == 0
+        persisted_observed_count = con.execute(
+            "SELECT COUNT(*) FROM observed_intraday_ohlcv WHERE interval = '5m'"
+        ).fetchone()[0]
 
     # Ingestion status telemetry confirms physical reality
     status_report = get_intraday_ingestion_status(allow_synthetic=False)
     assert status_report["total_synthetic_bars"] == 46500
-    assert status_report["total_observed_bars"] in (0, 2658)
+    assert status_report["total_observed_bars"] == persisted_observed_count
     assert status_report["production_status"] in ("SYNTHETIC_SIMULATION_ONLY", "PARTIAL_OBSERVED_DATA")
 
 
@@ -206,7 +209,7 @@ def test_true_tod_rvol_strictly_unavailable_in_production_mode():
     for stocks with insufficient or zero genuine observed 5m bars.
     """
     res = calculate_historical_time_of_day_rvol(
-        symbol="INFY",
+        symbol="TATAMOTORS",
         today_cumulative_volume=500000,
         current_time_str="14:15:00",
         allow_synthetic=False,
@@ -226,7 +229,7 @@ def test_synthetic_demo_mode_explicit():
     but MUST be labeled SYNTHETIC with synthetic data quality disclosure for synthetic baselines.
     """
     res = calculate_historical_time_of_day_rvol(
-        symbol="INFY",
+        symbol="TATAMOTORS",
         today_cumulative_volume=500000,
         current_time_str="14:15:00",
         allow_synthetic=True,
@@ -414,10 +417,13 @@ def test_api_market_movers_production_mode_isolates_synthetic(client):
     assert data["active_rvol_mode"] == "tod"
     assert data["filters_applied"]["allow_synthetic"] is False
 
-    # In strict production mode, synthetic bars are isolated -> 0 volume gainers
-    assert len(data["volume_gainers"]) == 0
-    assert len(data["bullish_confluence"]) == 0
-    assert len(data["high_volume_losers"]) == 0
+    # Strict production mode may return observed-data candidates, but never synthetic-only ones.
+    for section in ("volume_gainers", "bullish_confluence", "high_volume_losers"):
+        assert all(
+            item.get("tod_source") != "SYNTHETIC"
+            and item.get("tod_rvol_status") != "SYNTHETIC"
+            for item in data[section]
+        )
 
     # Metadata indicates synthetic isolation
     meta = data["metadata"]
@@ -454,6 +460,10 @@ def test_api_intraday_status_provenance_audit(client):
     data = response.json()
 
     assert data["total_synthetic_bars"] == 46500
-    assert data["total_observed_bars"] in (0, 2658)
+    with connect() as con:
+        persisted_observed_count = con.execute(
+            "SELECT COUNT(*) FROM observed_intraday_ohlcv WHERE interval = '5m'"
+        ).fetchone()[0]
+    assert data["total_observed_bars"] == persisted_observed_count
     assert data["production_status"] in ("SYNTHETIC_SIMULATION_ONLY", "PARTIAL_OBSERVED_DATA")
     assert "Strict isolation active" in data["isolation_notice"]

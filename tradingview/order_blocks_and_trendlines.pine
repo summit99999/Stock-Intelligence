@@ -1,0 +1,1206 @@
+//@version=6
+// Indicator: SMC Community Pro: OB, FVG, HTF TL, Range, POC, Fib, Volume Candles, PowerBar, Pocket Pivot, RVol & Multi-TF Returns
+indicator("SMC Community Pro: OB, FVG, Range, POC, Fib, VolCandles & Dashboard", shorttitle="SMC+PRO", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+// =============================================================================
+// 1. INPUT SETTINGS
+// =============================================================================
+
+// --- 1. Market Structure & Pivots ---
+grp_pivots          = "1. Market Structure & Pivots (BOS / CHoCH)"
+p_left              = input.int(5, "Pivot Left Bars", minval=1, maxval=50, group=grp_pivots)
+p_right             = input.int(5, "Pivot Right Bars", minval=1, maxval=50, group=grp_pivots)
+show_swing_labels   = input.bool(false, "Show HH / LH / HL / LL Labels", group=grp_pivots)
+show_bos            = input.bool(true, "Show Break of Structure (BOS)", group=grp_pivots)
+show_choch          = input.bool(true, "Distinguish CHoCH vs BOS", group=grp_pivots)
+show_crossed_mark   = input.bool(true, "Show Mitigated / Broken Marker (✖)", group=grp_pivots)
+
+// --- 2. Strong & Weak Swing Levels ---
+grp_sw              = "2. Strong & Weak Swing Levels (Institutional Targets)"
+show_strong_weak    = input.bool(true, "Show Strong / Weak Swing High & Low", group=grp_sw)
+color_strong        = input.color(#f23645, "Strong Swing Level Color", group=grp_sw)
+color_weak          = input.color(#089981, "Weak Swing Level Color", group=grp_sw)
+
+// --- 3. Order Blocks (OB) ---
+grp_obs             = "3. Order Blocks (OB)"
+show_obs            = input.bool(true, "Enable Order Blocks", group=grp_obs)
+ob_vol_calc         = input.string("Active Zones Share (Algoat 100% Sum)", "Volume % Basis", options=["Active Zones Share (Algoat 100% Sum)", "100-Bar Rolling Volume"], group=grp_obs)
+ob_zone_type        = input.string("Full (Wick-to-Wick)", "OB Boundary", options=["Full (Wick-to-Wick)", "Refined (Body-to-Wick)"], group=grp_obs)
+ob_mit_type         = input.string("Touch (Wick)", "Mitigation Condition", options=["Touch (Wick)", "50% Equilibrium", "Close Inside Zone"], group=grp_obs)
+ob_mit_action       = input.string("Style as Mitigated (Extend to Right)", "Action on Mitigation", options=["Style as Mitigated (Extend to Right)", "Stop Box at Touch", "Remove Box"], group=grp_obs)
+ob_max_active       = input.int(8, "Max Active OBs (Per Side)", minval=1, maxval=25, group=grp_obs)
+ob_extend_bars      = input.int(8, "Base Box Extension (Bars)", minval=0, maxval=50, group=grp_obs)
+bull_ob_color       = input.color(color.new(#454954, 80), "Bullish OB Background", group=grp_obs)
+bull_ob_border      = input.color(color.new(#787b86, 30), "Bullish OB Border", group=grp_obs)
+bear_ob_color       = input.color(color.new(#5a272d, 78), "Bearish OB Background", group=grp_obs)
+bear_ob_border      = input.color(color.new(#f23645, 30), "Bearish OB Border", group=grp_obs)
+
+// --- 4. Fair Value Gaps (FVG) ---
+grp_fvg             = "4. Fair Value Gaps (FVG)"
+show_fvgs           = input.bool(true, "Enable Fair Value Gaps (FVG)", group=grp_fvg)
+fvg_vol_calc        = input.string("Active Zones Share (Algoat 100% Sum)", "Volume % Basis", options=["Active Zones Share (Algoat 100% Sum)", "100-Bar Rolling Volume"], group=grp_fvg)
+fvg_min_mult        = input.float(0.0, "Min Gap Size (x ATR)", minval=0.0, step=0.05, group=grp_fvg)
+fvg_mit_action      = input.string("Style as Mitigated (Extend to Right)", "Action on Full Fill", options=["Style as Mitigated (Extend to Right)", "Stop Box at Touch", "Remove Box"], group=grp_fvg)
+fvg_max_active      = input.int(8, "Max Active FVGs (Per Side)", minval=1, maxval=25, group=grp_fvg)
+fvg_extend_bars     = input.int(8, "Base FVG Extension (Bars)", minval=0, maxval=50, group=grp_fvg)
+bull_fvg_color      = input.color(color.new(#183b23, 78), "Bullish FVG Background", group=grp_fvg)
+bull_fvg_border     = input.color(color.new(#089981, 30), "Bullish FVG Border", group=grp_fvg)
+bear_fvg_color      = input.color(color.new(#5a272d, 78), "Bearish FVG Background", group=grp_fvg)
+bear_fvg_border     = input.color(color.new(#f23645, 30), "Bearish FVG Border", group=grp_fvg)
+
+// --- 5. Pocket Pivot Momentum ---
+grp_pp              = "5. Pocket Pivot (Volume Lens Style)"
+show_pocket_pivots  = input.bool(true, "Enable Pocket Pivots", group=grp_pp)
+pp_vol_mult         = input.float(1.2, "Volume Multiplier vs Down Bars (x)", minval=1.0, step=0.1, group=grp_pp)
+pp_lookback         = input.int(10, "Down Bar Lookback (Bars)", minval=5, maxval=30, group=grp_pp)
+pp_close_threshold  = input.float(50.0, "Min Close Range (%)", minval=30.0, maxval=90.0, step=5.0, group=grp_pp)
+pp_show_highlight   = input.bool(true, "Outline Candle Box & Number Badge", group=grp_pp)
+pp_show_heaviest    = input.bool(true, "Show 'heaviest down bar' Marker & Zone", group=grp_pp)
+pp_show_avg_lines   = input.bool(true, "Show 10-bar Average & Base High Lines", group=grp_pp)
+pp_color            = input.color(#ec4899, "Pocket Pivot Color (Pink)", group=grp_pp)
+
+// --- 6. Volume-Based Candle Coloring (Volume Spread Analysis 6-Level Shades) ---
+grp_vcol            = "6. Volume-Based Candle Coloring (VSA 6 Shades)"
+enable_vol_color    = input.bool(true, "Enable Volume Colored Candles", group=grp_vcol, tooltip="Paints candles in 6 shades of green/red based on volume transacted relative to EMA. Darkest = institutional climax volume, Lightest = dry-up low volume.")
+vol_color_len       = input.int(20, "Volume EMA Period", minval=1, maxval=200, group=grp_vcol)
+vol_c_lvl6          = input.float(2.0, "Level 6 (Climax Volume > x)", minval=1.5, step=0.1, group=grp_vcol)
+vol_c_lvl5          = input.float(1.5, "Level 5 (High Volume > x)", minval=1.2, step=0.1, group=grp_vcol)
+vol_c_lvl4          = input.float(1.2, "Level 4 (Above Average > x)", minval=0.9, step=0.1, group=grp_vcol)
+vol_c_lvl3          = input.float(0.8, "Level 3 (Average Volume > x)", minval=0.5, step=0.1, group=grp_vcol)
+vol_c_lvl2          = input.float(0.4, "Level 2 (Low Volume > x)", minval=0.1, step=0.1, group=grp_vcol)
+
+// --- 7. Anti-Collision & Number Layout Engine ---
+grp_anticol         = "7. Anti-Collision & Number Layout"
+enable_anti_overlap = input.bool(true, "Enable Anti-Collision for Labels & Numbers", group=grp_anticol)
+
+// --- 8. Smart HTF Auto Trendlines ---
+grp_tl              = "8. Smart HTF Auto Trendlines"
+show_trendlines     = input.bool(true, "Enable Smart Trendlines", group=grp_tl)
+tl_mode             = input.string("Adaptive Auto-HTF", "Timeframe Multiplier Mode", options=["Adaptive Auto-HTF", "Fixed Minimum Bars"], group=grp_tl)
+tl_fixed_min_bars   = input.int(10, "Fixed Minimum Bars (if selected)", minval=3, maxval=50, group=grp_tl)
+tl_show_breaks      = input.bool(true, "Show Breakout / Breakdown Signals", group=grp_tl)
+tl_extend_bars      = input.int(30, "Trendline Forward Projection (Bars)", minval=5, maxval=100, group=grp_tl)
+tl_max_active       = input.int(2, "Max Active Lines (Per Side)", minval=1, maxval=5, group=grp_tl)
+tl_res_color        = input.color(color.new(#f23645, 20), "Resistance Trendline Color", group=grp_tl)
+tl_sup_color        = input.color(color.new(#089981, 20), "Support Trendline Color", group=grp_tl)
+
+// --- 8. Flat Consolidation Range ---
+grp_range           = "8. Flat Consolidation Range (Volume Lens Style)"
+show_flat_range     = input.bool(true, "Enable Flat Range Box", group=grp_range)
+range_min_bars      = input.int(20, "Range Lookback Length (Bars)", minval=10, maxval=100, group=grp_range)
+range_max_spread_pct= input.float(12.0, "Max Range Spread (%)", minval=1.0, maxval=50.0, step=0.5, group=grp_range)
+range_currency      = input.string("₹", "Price Currency Symbol", group=grp_range)
+range_box_color     = input.color(color.new(#787b86, 92), "Range Box Fill Color", group=grp_range)
+range_border_color  = input.color(color.new(#787b86, 60), "Range Border Color", group=grp_range)
+range_eq_color      = input.color(color.new(#2962ff, 30), "50% Equilibrium Line Color", group=grp_range)
+range_gold_color    = input.color(color.new(#ff9800, 20), "0.618 Golden Pocket Line Color", group=grp_range)
+
+// --- 10. Session Point of Control (POC) ---
+grp_poc             = "10. Session Point of Control (POC)"
+show_poc            = input.bool(true, "Enable Point of Control (POC)", group=grp_poc)
+poc_lookback        = input.int(20, "POC Lookback Bars", minval=10, maxval=100, group=grp_poc)
+poc_bins            = input.int(25, "POC Volume Bins", minval=10, maxval=50, group=grp_poc)
+poc_color           = input.color(color.new(#f23645, 0), "POC Line Color (Red)", group=grp_poc)
+
+// --- 11. Dealing Range & Fibonacci Retracement ---
+grp_dr              = "11. Dealing Range & Fibonacci Retracement"
+pd_lookback         = input.int(20, "Dealing Range Lookback (Bars)", minval=5, maxval=100, group=grp_dr)
+show_fib_levels     = input.bool(true, "Enable Auto Fibonacci Retracement", group=grp_dr)
+show_fib_golden_zone= input.bool(true, "Shade 0.50 - 0.618 Golden Zone", group=grp_dr)
+fib_color_eq        = input.color(color.new(#00bcd4, 20), "0.50 Equilibrium Color", group=grp_dr)
+fib_color_gold      = input.color(color.new(#ff9800, 20), "0.618 Golden Pocket Color", group=grp_dr)
+
+// --- 12. PowerBars & Momentum Signals (Purple & Deep Brown) ---
+grp_pb              = "12. PowerBars & Momentum Signals (Purple & Deep Brown)"
+show_powerbars      = input.bool(true, "Enable PowerBar Candles & Momentum Bubbles", group=grp_pb)
+pb_lookback_period  = input.string("3M", "PowerBars Tracking Window", options=["1M", "3M", "6M", "1Y"], group=grp_pb)
+vol_multiplier      = input.float(1.5, "Volume Multiplier vs 50-EMA", minval=1.0, maxval=5.0, step=0.1, group=grp_pb)
+body_threshold      = input.float(0.5, "Min Candle Body Size (% of High-Low)", minval=0.1, maxval=0.9, step=0.05, group=grp_pb)
+pb_bubble_style     = input.string("3D Ball (🟣 / 🟤)", "Momentum Bubble Style", options=["3D Ball (🟣 / 🟤)", "Refined Circle (Dot)"], group=grp_pb)
+pb_bubble_size      = input.string("Tiny (-20%)", "Momentum Bubble Size", options=["Tiny (-20%)", "Small"], group=grp_pb, tooltip="Tiny (-20%) decreases the bubble size by 20% for a clean, non-intrusive look.")
+purple_dot_color    = input.color(#9c27b0, "Bullish Purple Bubble Color", group=grp_pb)
+purple_candle_color = input.color(#9c27b0, "Bullish Candle Color (Purple)", group=grp_pb)
+brown_dot_color     = input.color(#6d4c41, "Bearish Deep Brown Bubble Color", group=grp_pb)
+brown_candle_color  = input.color(#5d3a1a, "Bearish Candle Color (Deep Brown)", group=grp_pb)
+
+// --- 13. Relative Volume (RVol) ---
+grp_rvol            = "13. Relative Volume (RVol) - Volume Lens Style"
+show_rvol           = input.bool(true, "Show Relative Volume (RVol)", group=grp_rvol)
+rvol_len            = input.int(20, "Relative Volume Length (Bars)", minval=1, maxval=100, group=grp_rvol)
+rvol_threshold      = input.float(100.0, "High Volume Threshold (%)", minval=50.0, maxval=300.0, step=10.0, group=grp_rvol)
+
+// --- 14. Dashboard Table & Multi-Timeframe Returns ---
+grp_tbl             = "14. SMC Community Pro Dashboard Table"
+show_pb_table       = input.bool(true, "Show Dashboard Table", group=grp_tbl)
+tbl_pos             = input.string("Top Right", "Table Position", options=["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group=grp_tbl)
+tbl_theme           = input.string("Dark", "Table Theme", options=["Dark", "Light"], group=grp_tbl)
+tbl_text_size_opt   = input.string("Small", "Table Text Size", options=["Tiny", "Small", "Normal"], group=grp_tbl)
+tbl_show_smc_stats  = input.bool(true, "Show Full SMC Metrics in Table", group=grp_tbl)
+show_returns        = input.bool(true, "Show Multi-TF Returns (1D, 1W, 1M, 1Y)", group=grp_tbl)
+
+// =============================================================================
+// 2. USER DEFINED TYPES (UDTS) & STATE STORAGE
+// =============================================================================
+
+type OrderBlock
+    box   b_box
+    float top_val
+    float bot_val
+    int   st_bar
+    bool  is_bull
+    bool  mitigated
+    float volume_val
+    float vol_pct
+    int   ext_bars
+
+type FairValueGap
+    box   b_box
+    float top_val
+    float bot_val
+    int   st_bar
+    bool  is_bull
+    bool  mitigated
+    float volume_val
+    float vol_pct
+    int   ext_bars
+
+type TrendLine
+    line  t_line
+    int   x1
+    float y1
+    int   x2
+    float y2
+    float slope
+    bool  is_res
+    bool  broken
+
+type StructureLine
+    line   s_line
+    label  s_lbl
+    int    x1
+    int    x2
+    float  y
+    bool   is_high
+    bool   is_choch
+    bool   crossed
+
+var OrderBlock[]    bull_obs        = array.new<OrderBlock>()
+var OrderBlock[]    bear_obs        = array.new<OrderBlock>()
+var FairValueGap[]  bull_fvgs       = array.new<FairValueGap>()
+var FairValueGap[]  bear_fvgs       = array.new<FairValueGap>()
+var TrendLine[]     res_trendlines  = array.new<TrendLine>()
+var TrendLine[]     sup_trendlines  = array.new<TrendLine>()
+var StructureLine[] struct_lines    = array.new<StructureLine>()
+
+// Global Structure and Signal Variables
+var int   last_ph_idx    = na
+var float last_ph_val    = na
+var int   prev_ph_idx    = na
+var float prev_ph_val    = na
+var int   last_pl_idx    = na
+var float last_pl_val    = na
+var int   prev_pl_idx    = na
+var float prev_pl_val    = na
+var int   market_trend   = 0
+
+// Strong & Weak Levels lines/labels
+var line  strong_level_line = na
+var label strong_level_lbl  = na
+var line  weak_level_line   = na
+var label weak_level_lbl    = na
+
+// Dealing Range & Retracement
+var box   pd_box          = na
+var line  pd_eq_line      = na
+var label pd_range_label  = na
+var float current_pd_pct  = na
+
+// Flat Range
+var box   range_box       = na
+var line  range_eq_line   = na
+var line  range_gold_line = na
+var label range_lbl_h     = na
+var label range_lbl_l     = na
+
+// Point of Control
+var line  poc_line        = na
+var label poc_lbl         = na
+
+// Auto Fibonacci
+var line  fib_50_line     = na
+var label fib_50_lbl      = na
+var line  fib_618_line    = na
+var label fib_618_lbl     = na
+var box   fib_zone_box    = na
+
+// Signal Alert Flags
+var bool bull_ob_created   = false
+var bool bear_ob_created   = false
+var bool bull_fvg_created  = false
+var bool bear_fvg_created  = false
+var bool tl_bull_break     = false
+var bool tl_bear_break     = false
+var bool bull_bos_alert    = false
+var bool bear_bos_alert    = false
+var bool choch_alert       = false
+var bool eqh_alert         = false
+var bool eql_alert         = false
+var bool powerbar_alert    = false
+var bool pb_bull_alert     = false
+var bool pb_bear_alert     = false
+var bool pocket_pivot_alert= false
+var bool rvol_alert        = false
+var bool fib_hit_05        = false
+var bool fib_hit_618       = false
+
+// Reset flags on each bar
+bull_ob_created    := false
+bear_ob_created    := false
+bull_fvg_created   := false
+bear_fvg_created   := false
+tl_bull_break      := false
+tl_bear_break      := false
+bull_bos_alert     := false
+bear_bos_alert     := false
+choch_alert        := false
+eqh_alert          := false
+eql_alert          := false
+powerbar_alert     := false
+pb_bull_alert      := false
+pb_bear_alert      := false
+pocket_pivot_alert := false
+rvol_alert         := false
+fib_hit_05         := false
+fib_hit_618        := false
+
+// 6-Level Volume Spread Analysis (VSA) Color Repository (6 is darkest, 1 is lightest)
+color g_01 = #dff5df // Level 1: Lightest Green (Dry-up / very low volume < 0.4x)
+color g_02 = #c8e6c9 // Level 2: Low Green (0.4x - 0.8x)
+color g_03 = #03f703 // Level 3: Average Green (0.8x - 1.2x)
+color g_04 = #44c649 // Level 4: Above Average Green (1.2x - 1.5x)
+color g_05 = #0ca80c // Level 5: High Green (1.5x - 2.0x)
+color g_06 = #006700 // Level 6: Darkest Green (Climax / Institutional > 2.0x)
+
+color r_01 = #f4e5e5 // Level 1: Lightest Red (Dry-up / very low volume < 0.4x)
+color r_02 = #f9cdcd // Level 2: Low Red (0.4x - 0.8x)
+color r_03 = #f79b9b // Level 3: Average Red (0.8x - 1.2x)
+color r_04 = #e66161 // Level 4: Above Average Red (1.2x - 1.5x)
+color r_05 = #f30000 // Level 5: High Red (1.5x - 2.0x)
+color r_06 = #9f0000 // Level 6: Darkest Red (Climax / Institutional > 2.0x)
+
+// =============================================================================
+// 3. UNCONDITIONAL ROOT-SCOPE TECHNICAL CALCULATIONS (ZERO COMPILER WARNINGS)
+// =============================================================================
+
+float atr                = ta.atr(14)
+float rolling_window_vol = math.max(ta.sma(volume, 100) * 100.0, 1.0)
+float pp_ma              = ta.sma(close, pp_lookback)
+float pp_base_h          = ta.highest(high[1], pp_lookback * 2)
+float pp_fallback_sma    = ta.sma(volume, pp_lookback)
+float vol_ema            = ta.ema(volume, 50)
+float vol_color_ema      = ta.ema(volume, vol_color_len)
+float vol_color_ratio    = (not na(vol_color_ema) and vol_color_ema > 0) ? (volume / vol_color_ema) : 1.0
+float flat_range_hh      = ta.highest(high, range_min_bars)
+float flat_range_ll      = ta.lowest(low, range_min_bars)
+float poc_calc_h         = ta.highest(high, poc_lookback)
+float poc_calc_l         = ta.lowest(low, poc_lookback)
+float ph                 = ta.pivothigh(high, p_left, p_right)
+float pl                 = ta.pivotlow(low, p_left, p_right)
+float pd_highest         = ta.highest(high, pd_lookback)
+float pd_lowest          = ta.lowest(low, pd_lookback)
+
+// Helper function for Volume Lens RVol security call
+f_rvol_sec(int len) =>
+    [volume, ta.sma(nz(volume[1]), len)]
+
+// Number formatter for institutional volume (e.g. 1.2M, 450K)
+format_vol(float v) =>
+    if na(v) or v <= 0.0
+        "0"
+    else if v >= 1000000000.0
+        str.tostring(v / 1000000000.0, "#.##") + "B"
+    else if v >= 1000000.0
+        str.tostring(v / 1000000.0, "#.##") + "M"
+    else if v >= 1000.0
+        str.tostring(v / 1000.0, "#.#") + "K"
+    else
+        str.tostring(v, "#")
+
+// Helper function to append clean table rows
+add_tbl_row(table tbl, int r, string col0, string col1, string col2, color col1_c, color body_c, string sz) =>
+    table.cell(tbl, 0, r, col0, text_color=body_c, text_size=sz)
+    table.cell(tbl, 1, r, col1, text_color=col1_c, text_size=sz)
+    table.cell(tbl, 2, r, col2, text_color=body_c, text_size=sz)
+
+// Helper to resolve box text overlap
+resolve_overlap(box b1, box b2, float y1, float y2, float threshold) =>
+    if math.abs(y1 - y2) <= threshold
+        if y1 >= y2
+            box.set_text_valign(b1, text.align_top)
+            box.set_text_valign(b2, text.align_bottom)
+        else
+            box.set_text_valign(b1, text.align_bottom)
+            box.set_text_valign(b2, text.align_top)
+
+// Helper to update Order Block volume percentage labels
+update_obs_vol_pct(OrderBlock[] obs, float total_vol) =>
+    if array.size(obs) > 0
+        for i = 0 to array.size(obs) - 1
+            OrderBlock ob = array.get(obs, i)
+            ob.vol_pct := total_vol > 0 ? (ob.volume_val / total_vol) * 100.0 : 0.0
+            string pfx = ob.mitigated ? "" : "* "
+            box.set_text(ob.b_box, pfx + str.tostring(ob.vol_pct, "#.#") + "% (" + format_vol(ob.volume_val) + ") OB")
+
+// Helper to update FVG volume percentage labels
+update_fvgs_vol_pct(FairValueGap[] fvgs, float total_vol) =>
+    if array.size(fvgs) > 0
+        for i = 0 to array.size(fvgs) - 1
+            FairValueGap f = array.get(fvgs, i)
+            f.vol_pct := total_vol > 0 ? (f.volume_val / total_vol) * 100.0 : 0.0
+            string pfx = f.mitigated ? "" : "* "
+            box.set_text(f.b_box, pfx + str.tostring(f.vol_pct, "#.#") + "% (" + format_vol(f.volume_val) + ") FVG")
+
+// =============================================================================
+// 4. POCKET PIVOT MOMENTUM (VOLUME LENS STYLE)
+// =============================================================================
+
+var int pp_count_window = 0
+var int pp_seq_count    = 0
+var int last_pp_bar     = 0
+
+int days_back = pb_lookback_period == "1M" ? 30 : (pb_lookback_period == "3M" ? 90 : (pb_lookback_period == "6M" ? 180 : 365))
+int cutoff_time = timenow - (days_back * 86400000)
+
+bool is_pp_up_bar = (close > open) and (close > close[1])
+float pp_range    = high - low
+bool is_pp_upper  = pp_range > 0 and (((close - low) / pp_range) * 100.0 >= pp_close_threshold)
+
+float max_down_vol = 0.0
+int heaviest_down_offset = 0
+
+if is_pp_up_bar and is_pp_upper and bar_index >= pp_lookback + 2
+    for k = 1 to pp_lookback
+        bool is_down_k = (close[k] < open[k]) or (close[k] < close[k + 1])
+        if is_down_k and volume[k] > max_down_vol
+            max_down_vol := volume[k]
+            heaviest_down_offset := k
+
+float down_vol_benchmark = max_down_vol > 0.0 ? max_down_vol : pp_fallback_sma
+bool is_pocket_pivot = show_pocket_pivots and is_pp_up_bar and is_pp_upper and (volume >= down_vol_benchmark * pp_vol_mult)
+
+if is_pocket_pivot
+    pocket_pivot_alert := true
+    if time >= cutoff_time
+        pp_count_window += 1
+    
+    if last_pp_bar > 0 and (bar_index - last_pp_bar) <= 25
+        pp_seq_count += 1
+    else
+        pp_seq_count := 1
+    last_pp_bar := bar_index
+
+    if pp_show_highlight
+        box.new(bar_index, high, bar_index, low, border_color=pp_color, border_width=2, bgcolor=color.new(pp_color, 85))
+        label.new(bar_index, high, str.tostring(pp_seq_count), color=pp_color, textcolor=color.white, style=label.style_label_down, size=size.small)
+
+    if pp_show_heaviest and heaviest_down_offset > 0
+        int heavy_idx = bar_index - heaviest_down_offset
+        box.new(heavy_idx, high[heaviest_down_offset], heavy_idx, low[heaviest_down_offset], border_color=color.new(pp_color, 60), border_width=1, border_style=line.style_dashed, bgcolor=color.new(pp_color, 90))
+        label.new(heavy_idx, high[heaviest_down_offset], "heaviest down bar", color=color.new(color.black, 100), textcolor=color.new(pp_color, 20), style=label.style_label_down, size=size.tiny)
+
+    if pp_show_avg_lines
+        line.new(bar_index - 10, pp_ma, bar_index + 15, pp_ma, color=color.new(pp_color, 40), style=line.style_dashed, width=1)
+        label.new(bar_index + 16, pp_ma, "10-bar avg " + range_currency + str.tostring(pp_ma, "#.##"), color=color.new(color.black, 100), textcolor=color.new(pp_color, 30), style=label.style_label_left, size=size.tiny)
+        line.new(bar_index - 20, pp_base_h, bar_index + 15, pp_base_h, color=color.new(#00bcd4, 40), style=line.style_dashed, width=1)
+        label.new(bar_index + 16, pp_base_h, "Base high " + range_currency + str.tostring(pp_base_h, "#.##"), color=color.new(color.black, 100), textcolor=color.new(#00bcd4, 30), style=label.style_label_left, size=size.tiny)
+
+// =============================================================================
+// 5. POWERBARS & MOMENTUM ENGINE (PURPLE & DEEP BROWN)
+// =============================================================================
+
+var int   pb_count_window = 0
+var int   pb_bull_count   = 0
+var int   pb_bear_count   = 0
+var float pb_first_close  = na
+
+bool is_high_volume = volume >= (vol_ema * vol_multiplier)
+float c_range       = high - low
+bool is_strong_body = c_range > 0 and (math.abs(close - open) / c_range >= body_threshold)
+bool is_powerbar    = show_powerbars and is_high_volume and is_strong_body
+bool is_bull_pb     = is_powerbar and (close >= open)
+bool is_bear_pb     = is_powerbar and (close < open)
+
+if time >= cutoff_time and na(pb_first_close)
+    pb_first_close := close
+
+if is_powerbar
+    powerbar_alert := true
+    if is_bull_pb
+        pb_bull_alert := true
+    else
+        pb_bear_alert := true
+    if time >= cutoff_time
+        pb_count_window += 1
+        if is_bull_pb
+            pb_bull_count += 1
+        else
+            pb_bear_count += 1
+
+bool use_tiny  = pb_bubble_size == "Tiny (-20%)"
+bool use_small = pb_bubble_size == "Small"
+
+// 3D Ball Markers: Tiny (-20% smaller)
+plotchar(is_bull_pb and use_tiny and pb_bubble_style == "3D Ball (🟣 / 🟤)", title="Bullish PowerBar 3D Purple Ball (Tiny)", char="🟣", location=location.belowbar, size=size.tiny, offset=0)
+plotchar(is_bear_pb and use_tiny and pb_bubble_style == "3D Ball (🟣 / 🟤)", title="Bearish PowerBar 3D Brown Ball (Tiny)",  char="🟤", location=location.abovebar, size=size.tiny, offset=0)
+
+// 3D Ball Markers: Small
+plotchar(is_bull_pb and use_small and pb_bubble_style == "3D Ball (🟣 / 🟤)", title="Bullish PowerBar 3D Purple Ball (Small)", char="🟣", location=location.belowbar, size=size.small, offset=0)
+plotchar(is_bear_pb and use_small and pb_bubble_style == "3D Ball (🟣 / 🟤)", title="Bearish PowerBar 3D Brown Ball (Small)",  char="🟤", location=location.abovebar, size=size.small, offset=0)
+
+// Refined Circle Dots: Tiny (-20% smaller)
+plotshape(is_bull_pb and use_tiny and pb_bubble_style == "Refined Circle (Dot)", title="Bullish PowerBar Purple Dot (Tiny)", style=shape.circle, location=location.belowbar, color=purple_dot_color, size=size.tiny, offset=0)
+plotshape(is_bear_pb and use_tiny and pb_bubble_style == "Refined Circle (Dot)", title="Bearish PowerBar Brown Dot (Tiny)",  style=shape.circle, location=location.abovebar, color=brown_dot_color,  size=size.tiny, offset=0)
+
+// Refined Circle Dots: Small
+plotshape(is_bull_pb and use_small and pb_bubble_style == "Refined Circle (Dot)", title="Bullish PowerBar Purple Dot (Small)", style=shape.circle, location=location.belowbar, color=purple_dot_color, size=size.small, offset=0)
+plotshape(is_bear_pb and use_small and pb_bubble_style == "Refined Circle (Dot)", title="Bearish PowerBar Brown Dot (Small)",  style=shape.circle, location=location.abovebar, color=brown_dot_color,  size=size.small, offset=0)
+
+// --- Volume-Based Candle Coloring Engine (6 VSA Levels) ---
+bool is_up_candle = close >= open
+color vsa_candle_col = na
+
+if enable_vol_color and not na(volume)
+    if is_up_candle
+        vsa_candle_col := vol_color_ratio > vol_c_lvl6 ? g_06 : vol_color_ratio > vol_c_lvl5 ? g_05 : vol_color_ratio > vol_c_lvl4 ? g_04 : vol_color_ratio > vol_c_lvl3 ? g_03 : vol_color_ratio > vol_c_lvl2 ? g_02 : g_01
+    else
+        vsa_candle_col := vol_color_ratio > vol_c_lvl6 ? r_06 : vol_color_ratio > vol_c_lvl5 ? r_05 : vol_color_ratio > vol_c_lvl4 ? r_04 : vol_color_ratio > vol_c_lvl3 ? r_03 : vol_color_ratio > vol_c_lvl2 ? r_02 : r_01
+
+// Color chart bars: Bullish PowerBar = Purple, Bearish PowerBar = Deep Brown, otherwise 6-tier VSA volume shades
+color final_bar_color = na
+if is_bull_pb
+    final_bar_color := purple_candle_color
+else if is_bear_pb
+    final_bar_color := brown_candle_color
+else if enable_vol_color
+    final_bar_color := vsa_candle_col
+
+barcolor(final_bar_color, title="Volume & Momentum Candle Color")
+
+// =============================================================================
+// 6. FLAT CONSOLIDATION RANGE (VOLUME LENS STYLE)
+// =============================================================================
+
+if show_flat_range and bar_index >= range_min_bars
+    float cur_hh = flat_range_hh
+    float cur_ll = flat_range_ll
+    float spread_pct = cur_ll > 0 ? ((cur_hh - cur_ll) / cur_ll) * 100.0 : 100.0
+
+    if spread_pct <= range_max_spread_pct
+        int start_x = bar_index - range_min_bars + 1
+        int end_x   = bar_index + 16
+        string txt_h = "Range high " + range_currency + str.tostring(cur_hh, "#.##")
+        string txt_l = "Range low "  + range_currency + str.tostring(cur_ll, "#.##")
+
+        if na(range_box)
+            range_box       := box.new(start_x, cur_hh, end_x, cur_ll, border_color=range_border_color, border_width=1, border_style=line.style_dashed, bgcolor=range_box_color)
+            range_eq_line   := line.new(start_x, (cur_hh + cur_ll) * 0.5, end_x, (cur_hh + cur_ll) * 0.5, color=range_eq_color, style=line.style_dashed, width=1)
+            range_gold_line := line.new(start_x, cur_ll + (cur_hh - cur_ll) * 0.618, end_x, cur_ll + (cur_hh - cur_ll) * 0.618, color=range_gold_color, style=line.style_dashed, width=1)
+            range_lbl_h     := label.new(end_x, cur_hh, txt_h, color=color.new(color.black, 100), textcolor=range_border_color, style=label.style_label_left, size=size.tiny)
+            range_lbl_l     := label.new(end_x, cur_ll, txt_l, color=color.new(color.black, 100), textcolor=range_border_color, style=label.style_label_left, size=size.tiny)
+        else
+            box.set_left(range_box, start_x)
+            box.set_right(range_box, end_x)
+            box.set_top(range_box, cur_hh)
+            box.set_bottom(range_box, cur_ll)
+            line.set_xy1(range_eq_line, start_x, (cur_hh + cur_ll) * 0.5)
+            line.set_xy2(range_eq_line, end_x, (cur_hh + cur_ll) * 0.5)
+            line.set_xy1(range_gold_line, start_x, cur_ll + (cur_hh - cur_ll) * 0.618)
+            line.set_xy2(range_gold_line, end_x, cur_ll + (cur_hh - cur_ll) * 0.618)
+            label.set_xy(range_lbl_h, end_x, cur_hh)
+            label.set_text(range_lbl_h, txt_h)
+            label.set_xy(range_lbl_l, end_x, cur_ll)
+            label.set_text(range_lbl_l, txt_l)
+
+// =============================================================================
+// 7. SESSION POINT OF CONTROL (POC)
+// =============================================================================
+
+float poc_val = na
+if show_poc and bar_index >= poc_lookback
+    float p_high = poc_calc_h
+    float p_low  = poc_calc_l
+    float step   = (p_high - p_low) / poc_bins
+
+    if step > 0
+        var float[] bin_vol = array.new_float(poc_bins, 0.0)
+        for b = 0 to poc_bins - 1
+            array.set(bin_vol, b, 0.0)
+
+        for i = 0 to poc_lookback - 1
+            float c_vol = not na(volume[i]) ? volume[i] : 1.0
+            float c_mid = (high[i] + low[i]) * 0.5
+            int b_idx = math.min(math.max(int((c_mid - p_low) / step), 0), poc_bins - 1)
+            array.set(bin_vol, b_idx, array.get(bin_vol, b_idx) + c_vol)
+
+        float max_b_vol = -1.0
+        int max_b_idx = 0
+        for b = 0 to poc_bins - 1
+            float v = array.get(bin_vol, b)
+            if v > max_b_vol
+                max_b_vol := v
+                max_b_idx := b
+
+        poc_val := p_low + (max_b_idx + 0.5) * step
+        int poc_x1 = bar_index - poc_lookback + 1
+        int poc_x2 = bar_index + 16
+        string p_txt = "POC (" + str.tostring(poc_lookback) + "): " + range_currency + str.tostring(poc_val, "#.##")
+
+        if na(poc_line)
+            poc_line := line.new(poc_x1, poc_val, poc_x2, poc_val, color=poc_color, width=2, style=line.style_solid)
+            poc_lbl  := label.new(poc_x2, poc_val, p_txt, color=color.new(color.black, 100), textcolor=poc_color, style=label.style_label_left, size=size.tiny)
+        else
+            line.set_xy1(poc_line, poc_x1, poc_val)
+            line.set_xy2(poc_line, poc_x2, poc_val)
+            label.set_xy(poc_lbl, poc_x2, poc_val)
+            label.set_text(poc_lbl, p_txt)
+
+// =============================================================================
+// 8. MARKET STRUCTURE (PIVOTS, BOS, CHOCH, STRONG & WEAK SWINGS)
+// =============================================================================
+
+int min_tl_bars = tl_mode == "Adaptive Auto-HTF" ? (timeframe.isintraday ? 12 : 8) : tl_fixed_min_bars
+
+if not na(ph)
+    int p_idx = bar_index - p_right
+    if na(last_ph_idx)
+        last_ph_idx := p_idx
+        last_ph_val := ph
+    else
+        prev_ph_idx := last_ph_idx
+        prev_ph_val := last_ph_val
+        last_ph_idx := p_idx
+        last_ph_val := ph
+
+        if show_trendlines and (last_ph_idx - prev_ph_idx >= min_tl_bars) and (last_ph_val < prev_ph_val)
+            float slope = (last_ph_val - prev_ph_val) / (last_ph_idx - prev_ph_idx)
+            line tl = line.new(prev_ph_idx, prev_ph_val, last_ph_idx + tl_extend_bars, last_ph_val + slope * tl_extend_bars, color=tl_res_color, width=1, style=line.style_dashed)
+            array.unshift(res_trendlines, TrendLine.new(tl, prev_ph_idx, prev_ph_val, last_ph_idx, last_ph_val, slope, true, false))
+            if array.size(res_trendlines) > tl_max_active
+                TrendLine old = array.pop(res_trendlines)
+                line.delete(old.t_line)
+
+        if math.abs(last_ph_val - prev_ph_val) <= (atr * 0.15)
+            line.new(prev_ph_idx, prev_ph_val, last_ph_idx, last_ph_val, color=color.new(#f23645, 50), style=line.style_dotted, width=1)
+            label.new(math.round((prev_ph_idx + last_ph_idx) * 0.5), last_ph_val, "EQH", color=color.new(color.black, 100), textcolor=color.new(#f23645, 40), style=label.style_label_down, size=size.tiny)
+            eqh_alert := true
+
+        if show_swing_labels
+            label.new(p_idx, ph, ph > prev_ph_val ? "HH" : "LH", color=color.new(color.black, 100), textcolor=color.new(#787b86, 30), style=label.style_label_down, size=size.tiny)
+
+if not na(pl)
+    int p_idx = bar_index - p_right
+    if na(last_pl_idx)
+        last_pl_idx := p_idx
+        last_pl_val := pl
+    else
+        prev_pl_idx := last_pl_idx
+        prev_pl_val := last_pl_val
+        last_pl_idx := p_idx
+        last_pl_val := pl
+
+        if show_trendlines and (last_pl_idx - prev_pl_idx >= min_tl_bars) and (last_pl_val > prev_pl_val)
+            float slope = (last_pl_val - prev_pl_val) / (last_pl_idx - prev_pl_idx)
+            line tl = line.new(prev_pl_idx, prev_pl_val, last_pl_idx + tl_extend_bars, last_pl_val + slope * tl_extend_bars, color=tl_sup_color, width=1, style=line.style_dashed)
+            array.unshift(sup_trendlines, TrendLine.new(tl, prev_pl_idx, prev_pl_val, last_pl_idx, last_pl_val, slope, false, false))
+            if array.size(sup_trendlines) > tl_max_active
+                TrendLine old = array.pop(sup_trendlines)
+                line.delete(old.t_line)
+
+        if math.abs(last_pl_val - prev_pl_val) <= (atr * 0.15)
+            line.new(prev_pl_idx, prev_pl_val, last_pl_idx, last_pl_val, color=color.new(#089981, 50), style=line.style_dotted, width=1)
+            label.new(math.round((prev_pl_idx + last_pl_idx) * 0.5), last_pl_val, "EQL", color=color.new(color.black, 100), textcolor=color.new(#089981, 40), style=label.style_label_up, size=size.tiny)
+            eql_alert := true
+
+        if show_swing_labels
+            label.new(p_idx, pl, pl < prev_pl_val ? "LL" : "HL", color=color.new(color.black, 100), textcolor=color.new(#787b86, 30), style=label.style_label_up, size=size.tiny)
+
+// --- Strong & Weak Swing Levels ---
+if show_strong_weak and not na(last_ph_val) and not na(last_pl_val)
+    int ext_x = bar_index + 12
+    bool is_up = market_trend >= 0
+    float st_y = is_up ? last_pl_val : last_ph_val
+    int   st_x = is_up ? last_pl_idx : last_ph_idx
+    string st_t = is_up ? "Strong Swing Low ✓" : "Strong Swing High ✓"
+    float wk_y = is_up ? last_ph_val : last_pl_val
+    int   wk_x = is_up ? last_ph_idx : last_pl_idx
+    string wk_t = is_up ? "Weak Swing High" : "Weak Swing Low"
+
+    if na(strong_level_line)
+        strong_level_line := line.new(st_x, st_y, ext_x, st_y, color=color_strong, width=2, style=line.style_solid)
+        strong_level_lbl  := label.new(ext_x, st_y, st_t, color=color.new(color.black, 100), textcolor=color_strong, style=label.style_label_left, size=size.tiny)
+        weak_level_line   := line.new(wk_x, wk_y, ext_x, wk_y, color=color_weak, width=2, style=line.style_solid)
+        weak_level_lbl    := label.new(ext_x, wk_y, wk_t, color=color.new(color.black, 100), textcolor=color_weak, style=label.style_label_left, size=size.tiny)
+    else
+        line.set_xy1(strong_level_line, st_x, st_y)
+        line.set_xy2(strong_level_line, ext_x, st_y)
+        line.set_color(strong_level_line, color_strong)
+        label.set_xy(strong_level_lbl, ext_x, st_y)
+        label.set_text(strong_level_lbl, st_t)
+        label.set_textcolor(strong_level_lbl, color_strong)
+
+        line.set_xy1(weak_level_line, wk_x, wk_y)
+        line.set_xy2(weak_level_line, ext_x, wk_y)
+        line.set_color(weak_level_line, color_weak)
+        label.set_xy(weak_level_lbl, ext_x, wk_y)
+        label.set_text(weak_level_lbl, wk_t)
+        label.set_textcolor(weak_level_lbl, color_weak)
+
+// --- Dealing Range & Fibonacci Retracement ---
+int ext_x_pd = bar_index + 20
+if bar_index >= pd_lookback
+    float pd_h = pd_highest
+    float pd_l = pd_lowest
+    float pd_eq = (pd_h + pd_l) * 0.5
+    if (pd_h - pd_l) > 0.0
+        current_pd_pct := ((close - pd_l) / (pd_h - pd_l)) * 100.0
+
+    int pd_start_x = bar_index - pd_lookback + 1
+    string pd_label_text = not na(current_pd_pct) ? ("Dealing Range: " + (current_pd_pct >= 50.0 ? "Premium " : "Discount ") + str.tostring(current_pd_pct, "#.#") + "%") : ""
+
+    if na(pd_box)
+        pd_box := box.new(pd_start_x, pd_h, ext_x_pd, pd_l, border_color=color.new(#787b86, 75), border_width=1, border_style=line.style_dashed, bgcolor=color.new(#787b86, 94))
+        pd_eq_line := line.new(pd_start_x, pd_eq, ext_x_pd, pd_eq, color=color.new(#787b86, 40), width=1, style=line.style_dashed)
+        pd_range_label := label.new(ext_x_pd, pd_h, pd_label_text, color=color.new(color.black, 100), textcolor=color.new(#787b86, 20), style=label.style_label_left, size=size.tiny)
+    else
+        box.set_left(pd_box, pd_start_x)
+        box.set_right(pd_box, ext_x_pd)
+        box.set_top(pd_box, pd_h)
+        box.set_bottom(pd_box, pd_l)
+        line.set_xy1(pd_eq_line, pd_start_x, pd_eq)
+        line.set_xy2(pd_eq_line, ext_x_pd, pd_eq)
+        label.set_xy(pd_range_label, ext_x_pd, pd_h)
+        label.set_text(pd_range_label, pd_label_text)
+
+// --- Auto Fibonacci Retracement ---
+if show_fib_levels and not na(last_ph_val) and not na(last_pl_val)
+    bool is_rally = last_pl_idx < last_ph_idx
+    float swing_hi = last_ph_val
+    float swing_lo = last_pl_val
+    float diff     = swing_hi - swing_lo
+
+    if diff > 0
+        float fib_50_y  = is_rally ? (swing_hi - diff * 0.50)  : (swing_lo + diff * 0.50)
+        float fib_618_y = is_rally ? (swing_hi - diff * 0.618) : (swing_lo + diff * 0.618)
+        int fib_x1 = math.min(last_ph_idx, last_pl_idx)
+        int fib_x2 = bar_index + 16
+
+        string t_50  = "0.50 (" + range_currency + str.tostring(fib_50_y, "#.##") + ")"
+        string t_618 = "0.618 (" + range_currency + str.tostring(fib_618_y, "#.##") + ") Golden Pocket"
+
+        if na(fib_50_line)
+            fib_50_line  := line.new(fib_x1, fib_50_y, fib_x2, fib_50_y, color=fib_color_eq, width=2, style=line.style_solid)
+            fib_50_lbl   := label.new(fib_x2, fib_50_y, t_50, color=color.new(color.black, 100), textcolor=fib_color_eq, style=label.style_label_left, size=size.tiny)
+            fib_618_line := line.new(fib_x1, fib_618_y, fib_x2, fib_618_y, color=fib_color_gold, width=2, style=line.style_solid)
+            fib_618_lbl  := label.new(fib_x2, fib_618_y, t_618, color=color.new(color.black, 100), textcolor=fib_color_gold, style=label.style_label_left, size=size.tiny)
+            if show_fib_golden_zone
+                fib_zone_box := box.new(fib_x1, math.max(fib_50_y, fib_618_y), fib_x2, math.min(fib_50_y, fib_618_y), border_color=color.new(fib_color_gold, 80), bgcolor=color.new(fib_color_gold, 92))
+        else
+            line.set_xy1(fib_50_line, fib_x1, fib_50_y)
+            line.set_xy2(fib_50_line, fib_x2, fib_50_y)
+            label.set_xy(fib_50_lbl, fib_x2, fib_50_y)
+            label.set_text(fib_50_lbl, t_50)
+            line.set_xy1(fib_618_line, fib_x1, fib_618_y)
+            line.set_xy2(fib_618_line, fib_x2, fib_618_y)
+            label.set_xy(fib_618_lbl, fib_x2, fib_618_y)
+            label.set_text(fib_618_lbl, t_618)
+            if show_fib_golden_zone and not na(fib_zone_box)
+                box.set_left(fib_zone_box, fib_x1)
+                box.set_right(fib_zone_box, fib_x2)
+                box.set_top(fib_zone_box, math.max(fib_50_y, fib_618_y))
+                box.set_bottom(fib_zone_box, math.min(fib_50_y, fib_618_y))
+
+        if math.abs(close - fib_50_y) <= (atr * 0.25)
+            fib_hit_05 := true
+        if math.abs(close - fib_618_y) <= (atr * 0.25)
+            fib_hit_618 := true
+
+// =============================================================================
+// 9. TRENDLINE BREAKOUT / BREAKDOWN DETECTION
+// =============================================================================
+
+if show_trendlines and array.size(res_trendlines) > 0
+    TrendLine active_res = array.get(res_trendlines, 0)
+    if not na(active_res) and not active_res.broken and bar_index > active_res.x2
+        float curr_val = active_res.y2 + active_res.slope * (bar_index - active_res.x2)
+        float prev_val = active_res.y2 + active_res.slope * (bar_index - 1 - active_res.x2)
+        if curr_val > 0 and close > curr_val and close[1] <= prev_val
+            active_res.broken := true
+            tl_bull_break     := true
+            line.set_extend(active_res.t_line, extend.none)
+            line.set_x2(active_res.t_line, bar_index)
+            line.set_y2(active_res.t_line, curr_val)
+            line.set_style(active_res.t_line, line.style_dashed)
+            if tl_show_breaks
+                label.new(bar_index, low - (atr * 0.4), "▲ TL Break", color=#089981, textcolor=color.white, style=label.style_label_up, size=size.tiny)
+
+if show_trendlines and array.size(sup_trendlines) > 0
+    TrendLine active_sup = array.get(sup_trendlines, 0)
+    if not na(active_sup) and not active_sup.broken and bar_index > active_sup.x2
+        float curr_val = active_sup.y2 + active_sup.slope * (bar_index - active_sup.x2)
+        float prev_val = active_sup.y2 + active_sup.slope * (bar_index - 1 - active_sup.x2)
+        if curr_val > 0 and close < curr_val and close[1] >= prev_val
+            active_sup.broken := true
+            tl_bear_break     := true
+            line.set_extend(active_sup.t_line, extend.none)
+            line.set_x2(active_sup.t_line, bar_index)
+            line.set_y2(active_sup.t_line, curr_val)
+            line.set_style(active_sup.t_line, line.style_dashed)
+            if tl_show_breaks
+                label.new(bar_index, high + (atr * 0.4), "▼ TL Break", color=#f23645, textcolor=color.white, style=label.style_label_down, size=size.tiny)
+
+// =============================================================================
+// 10. FAIR VALUE GAPS (FVG) DETECTION & STORAGE
+// =============================================================================
+
+if show_fvgs and bar_index >= 2
+    if low > high[2] and (low - high[2]) >= (atr * fvg_min_mult)
+        float gap_top = low
+        float gap_bot = high[2]
+        box b_fvg = box.new(bar_index - 1, gap_top, bar_index + fvg_extend_bars, gap_bot, border_color=bull_fvg_border, border_width=1, border_style=line.style_solid, bgcolor=bull_fvg_color, text="* FVG", text_size=size.tiny, text_color=color.new(color.white, 20), text_halign=text.align_right, text_valign=text.align_center)
+        array.unshift(bull_fvgs, FairValueGap.new(b_fvg, gap_top, gap_bot, bar_index - 1, true, false, volume[1], 0.0, fvg_extend_bars))
+        bull_fvg_created := true
+        if array.size(bull_fvgs) > fvg_max_active
+            FairValueGap old = array.pop(bull_fvgs)
+            box.delete(old.b_box)
+
+    if high < low[2] and (low[2] - high) >= (atr * fvg_min_mult)
+        float gap_top = low[2]
+        float gap_bot = high
+        box b_fvg = box.new(bar_index - 1, gap_top, bar_index + fvg_extend_bars, gap_bot, border_color=bear_fvg_border, border_width=1, border_style=line.style_solid, bgcolor=bear_fvg_color, text="* FVG", text_size=size.tiny, text_color=color.new(color.white, 20), text_halign=text.align_right, text_valign=text.align_center)
+        array.unshift(bear_fvgs, FairValueGap.new(b_fvg, gap_top, gap_bot, bar_index - 1, false, false, volume[1], 0.0, fvg_extend_bars))
+        bear_fvg_created := true
+        if array.size(bear_fvgs) > fvg_max_active
+            FairValueGap old = array.pop(bear_fvgs)
+            box.delete(old.b_box)
+
+// =============================================================================
+// 11. BREAK OF STRUCTURE (BOS) & ORDER BLOCKS (OB) ENGINE
+// =============================================================================
+
+// Bullish Breakout
+if not na(last_ph_val) and close > last_ph_val and close[1] <= last_ph_val
+    bool is_choch = show_choch and market_trend == -1
+    market_trend := 1
+    string lbl_text = is_choch ? "ChoCh" : (show_bos ? "BoS[1]" : "")
+
+    if show_bos or is_choch
+        line sl = line.new(last_ph_idx, last_ph_val, bar_index, last_ph_val, color=is_choch ? #ff9800 : #089981, width=1, style=line.style_solid)
+        label lb = label.new(math.round((last_ph_idx + bar_index) * 0.5), last_ph_val, lbl_text, color=color.new(color.black, 100), textcolor=is_choch ? #ff9800 : #089981, style=label.style_label_down, size=size.tiny)
+        array.unshift(struct_lines, StructureLine.new(sl, lb, last_ph_idx, bar_index, last_ph_val, true, is_choch, false))
+        if is_choch
+            choch_alert := true
+        else
+            bull_bos_alert := true
+
+    if show_obs
+        int ob_bar = last_pl_idx
+        float min_l = low[bar_index - ob_bar]
+        for i = 1 to math.min(15, bar_index - ob_bar + 5)
+            int b = bar_index - ob_bar - 5 + i
+            if b >= 0 and b < bar_index and (close[b] < open[b]) and (low[b] <= min_l)
+                ob_bar := bar_index - b
+                break
+
+        int st_bar = ob_bar
+        int b_off  = bar_index - st_bar
+        float top_val = ob_zone_type == "Full (Wick-to-Wick)" ? high[b_off] : math.max(open[b_off], close[b_off])
+        float bot_val = low[b_off]
+        float ob_v    = volume[b_off]
+
+        box b = box.new(left=st_bar, top=top_val, right=bar_index + ob_extend_bars, bottom=bot_val, xloc=xloc.bar_index, border_color=bull_ob_border, border_width=1, border_style=line.style_solid, bgcolor=bull_ob_color, text="* OB", text_size=size.tiny, text_color=color.new(color.white, 20), text_halign=text.align_right, text_valign=text.align_center)
+        array.unshift(bull_obs, OrderBlock.new(b, top_val, bot_val, st_bar, true, false, ob_v, 0.0, ob_extend_bars))
+        bull_ob_created := true
+        if array.size(bull_obs) > ob_max_active
+            OrderBlock old = array.pop(bull_obs)
+            box.delete(old.b_box)
+
+    last_ph_val := na
+
+// Bearish Breakdown
+if not na(last_pl_val) and close < last_pl_val and close[1] >= last_pl_val
+    bool is_choch = show_choch and market_trend == 1
+    market_trend := -1
+    string lbl_text = is_choch ? "ChoCh" : (show_bos ? "BoS[1]" : "")
+
+    if show_bos or is_choch
+        line sl = line.new(last_pl_idx, last_pl_val, bar_index, last_pl_val, color=is_choch ? #ff9800 : #f23645, width=1, style=line.style_solid)
+        label lb = label.new(math.round((last_pl_idx + bar_index) * 0.5), last_pl_val, lbl_text, color=color.new(color.black, 100), textcolor=is_choch ? #ff9800 : #f23645, style=label.style_label_up, size=size.tiny)
+        array.unshift(struct_lines, StructureLine.new(sl, lb, last_pl_idx, bar_index, last_pl_val, false, is_choch, false))
+        if is_choch
+            choch_alert := true
+        else
+            bear_bos_alert := true
+
+    if show_obs
+        int ob_bar = last_ph_idx
+        float max_h = high[bar_index - ob_bar]
+        for i = 1 to math.min(15, bar_index - ob_bar + 5)
+            int b = bar_index - ob_bar - 5 + i
+            if b >= 0 and b < bar_index and (close[b] > open[b]) and (high[b] >= max_h)
+                ob_bar := bar_index - b
+                break
+
+        int st_bar = ob_bar
+        int b_off  = bar_index - st_bar
+        float top_val = high[b_off]
+        float bot_val = ob_zone_type == "Full (Wick-to-Wick)" ? low[b_off] : math.min(open[b_off], close[b_off])
+        float ob_v    = volume[b_off]
+
+        box b = box.new(left=st_bar, top=top_val, right=bar_index + ob_extend_bars, bottom=bot_val, xloc=xloc.bar_index, border_color=bear_ob_border, border_width=1, border_style=line.style_solid, bgcolor=bear_ob_color, text="* OB", text_size=size.tiny, text_color=color.new(color.white, 20), text_halign=text.align_right, text_valign=text.align_center)
+        array.unshift(bear_obs, OrderBlock.new(b, top_val, bot_val, st_bar, false, false, ob_v, 0.0, ob_extend_bars))
+        bear_ob_created := true
+        if array.size(bear_obs) > ob_max_active
+            OrderBlock old = array.pop(bear_obs)
+            box.delete(old.b_box)
+
+    last_pl_val := na
+
+// Manage Structure Lines Crossing (✖)
+if show_crossed_mark and array.size(struct_lines) > 0
+    for i = 0 to array.size(struct_lines) - 1
+        StructureLine s = array.get(struct_lines, i)
+        if not s.crossed
+            if (s.is_high and high > s.y and bar_index > s.x2) or (not s.is_high and low < s.y and bar_index > s.x2)
+                s.crossed := true
+                string cur_txt = label.get_text(s.s_lbl)
+                label.set_text(s.s_lbl, cur_txt + " ✖")
+
+// =============================================================================
+// 12. ORDER BLOCKS & FVG LIFECYCLE & PERCENTAGE ENGINE
+// =============================================================================
+
+// Bullish OB Mitigation
+if array.size(bull_obs) > 0
+    for i = array.size(bull_obs) - 1 to 0
+        OrderBlock ob = array.get(bull_obs, i)
+        if not ob.mitigated
+            bool is_mit = ob_mit_type == "Touch (Wick)" ? low <= ob.top_val : (ob_mit_type == "50% Equilibrium" ? low <= (ob.top_val + ob.bot_val) * 0.5 : close <= ob.top_val)
+            if is_mit
+                ob.mitigated := true
+                if ob_mit_action == "Remove Box"
+                    box.delete(ob.b_box)
+                    array.remove(bull_obs, i)
+                else if ob_mit_action == "Stop Box at Touch"
+                    box.set_right(ob.b_box, bar_index)
+                else
+                    box.set_right(ob.b_box, bar_index + ob.ext_bars)
+                    box.set_bgcolor(ob.b_box, color.new(#454954, 88))
+                    box.set_border_color(ob.b_box, color.new(#787b86, 60))
+            else
+                box.set_right(ob.b_box, bar_index + ob.ext_bars)
+        else if ob_mit_action == "Style as Mitigated (Extend to Right)"
+            box.set_right(ob.b_box, bar_index + ob.ext_bars)
+
+// Bearish OB Mitigation
+if array.size(bear_obs) > 0
+    for i = array.size(bear_obs) - 1 to 0
+        OrderBlock ob = array.get(bear_obs, i)
+        if not ob.mitigated
+            bool is_mit = ob_mit_type == "Touch (Wick)" ? high >= ob.bot_val : (ob_mit_type == "50% Equilibrium" ? high >= (ob.top_val + ob.bot_val) * 0.5 : close >= ob.bot_val)
+            if is_mit
+                ob.mitigated := true
+                if ob_mit_action == "Remove Box"
+                    box.delete(ob.b_box)
+                    array.remove(bear_obs, i)
+                else if ob_mit_action == "Stop Box at Touch"
+                    box.set_right(ob.b_box, bar_index)
+                else
+                    box.set_right(ob.b_box, bar_index + ob.ext_bars)
+                    box.set_bgcolor(ob.b_box, color.new(#5a272d, 88))
+                    box.set_border_color(ob.b_box, color.new(#f23645, 60))
+            else
+                box.set_right(ob.b_box, bar_index + ob.ext_bars)
+        else if ob_mit_action == "Style as Mitigated (Extend to Right)"
+            box.set_right(ob.b_box, bar_index + ob.ext_bars)
+
+// Bullish FVG Mitigation
+if array.size(bull_fvgs) > 0
+    for i = array.size(bull_fvgs) - 1 to 0
+        FairValueGap f = array.get(bull_fvgs, i)
+        if not f.mitigated
+            if low <= f.bot_val
+                f.mitigated := true
+                if fvg_mit_action == "Remove Box"
+                    box.delete(f.b_box)
+                    array.remove(bull_fvgs, i)
+                else if fvg_mit_action == "Stop Box at Touch"
+                    box.set_right(f.b_box, bar_index)
+                else
+                    box.set_right(f.b_box, bar_index + f.ext_bars)
+                    box.set_bgcolor(f.b_box, color.new(#183b23, 88))
+                    box.set_border_color(f.b_box, color.new(#089981, 60))
+            else
+                box.set_right(f.b_box, bar_index + f.ext_bars)
+        else if fvg_mit_action == "Style as Mitigated (Extend to Right)"
+            box.set_right(f.b_box, bar_index + f.ext_bars)
+
+// Bearish FVG Mitigation
+if array.size(bear_fvgs) > 0
+    for i = array.size(bear_fvgs) - 1 to 0
+        FairValueGap f = array.get(bear_fvgs, i)
+        if not f.mitigated
+            if high >= f.top_val
+                f.mitigated := true
+                if fvg_mit_action == "Remove Box"
+                    box.delete(f.b_box)
+                    array.remove(bear_fvgs, i)
+                else if fvg_mit_action == "Stop Box at Touch"
+                    box.set_right(f.b_box, bar_index)
+                else
+                    box.set_right(f.b_box, bar_index + f.ext_bars)
+                    box.set_bgcolor(f.b_box, color.new(#5a272d, 88))
+                    box.set_border_color(f.b_box, color.new(#f23645, 60))
+            else
+                box.set_right(f.b_box, bar_index + f.ext_bars)
+        else if fvg_mit_action == "Style as Mitigated (Extend to Right)"
+            box.set_right(f.b_box, bar_index + f.ext_bars)
+
+// --- Calculate Active Zones Total Volume ---
+float total_ob_vol = 0.0
+if ob_vol_calc == "Active Zones Share (Algoat 100% Sum)"
+    if array.size(bull_obs) > 0
+        for i = 0 to array.size(bull_obs) - 1
+            total_ob_vol += array.get(bull_obs, i).volume_val
+    if array.size(bear_obs) > 0
+        for i = 0 to array.size(bear_obs) - 1
+            total_ob_vol += array.get(bear_obs, i).volume_val
+else
+    total_ob_vol := rolling_window_vol
+
+update_obs_vol_pct(bull_obs, total_ob_vol)
+update_obs_vol_pct(bear_obs, total_ob_vol)
+
+float total_fvg_vol = 0.0
+if fvg_vol_calc == "Active Zones Share (Algoat 100% Sum)"
+    if array.size(bull_fvgs) > 0
+        for i = 0 to array.size(bull_fvgs) - 1
+            total_fvg_vol += array.get(bull_fvgs, i).volume_val
+    if array.size(bear_fvgs) > 0
+        for i = 0 to array.size(bear_fvgs) - 1
+            total_fvg_vol += array.get(bear_fvgs, i).volume_val
+else
+    total_fvg_vol := rolling_window_vol
+
+update_fvgs_vol_pct(bull_fvgs, total_fvg_vol)
+update_fvgs_vol_pct(bear_fvgs, total_fvg_vol)
+
+// =============================================================================
+// 13. ANTI-COLLISION & NUMBER LAYOUT ENGINE
+// =============================================================================
+
+if enable_anti_overlap
+    if array.size(bull_obs) > 0
+        for i = 0 to array.size(bull_obs) - 1
+            box.set_text_valign(array.get(bull_obs, i).b_box, text.align_center)
+    if array.size(bull_fvgs) > 0
+        for i = 0 to array.size(bull_fvgs) - 1
+            box.set_text_valign(array.get(bull_fvgs, i).b_box, text.align_center)
+    if array.size(bear_obs) > 0
+        for i = 0 to array.size(bear_obs) - 1
+            box.set_text_valign(array.get(bear_obs, i).b_box, text.align_center)
+    if array.size(bear_fvgs) > 0
+        for i = 0 to array.size(bear_fvgs) - 1
+            box.set_text_valign(array.get(bear_fvgs, i).b_box, text.align_center)
+
+    // Check Bullish Collisions
+    if array.size(bull_obs) >= 2
+        for i = 0 to array.size(bull_obs) - 2
+            for j = i + 1 to array.size(bull_obs) - 1
+                OrderBlock ob1 = array.get(bull_obs, i)
+                OrderBlock ob2 = array.get(bull_obs, j)
+                resolve_overlap(ob1.b_box, ob2.b_box, ob1.top_val, ob2.top_val, atr * 0.4)
+
+    if array.size(bull_fvgs) >= 2
+        for i = 0 to array.size(bull_fvgs) - 2
+            for j = i + 1 to array.size(bull_fvgs) - 1
+                FairValueGap f1 = array.get(bull_fvgs, i)
+                FairValueGap f2 = array.get(bull_fvgs, j)
+                resolve_overlap(f1.b_box, f2.b_box, f1.top_val, f2.top_val, atr * 0.4)
+
+    if array.size(bull_obs) > 0 and array.size(bull_fvgs) > 0
+        for i = 0 to array.size(bull_obs) - 1
+            for j = 0 to array.size(bull_fvgs) - 1
+                OrderBlock ob = array.get(bull_obs, i)
+                FairValueGap f = array.get(bull_fvgs, j)
+                resolve_overlap(ob.b_box, f.b_box, ob.top_val, f.top_val, atr * 0.4)
+
+    // Check Bearish Collisions
+    if array.size(bear_obs) >= 2
+        for i = 0 to array.size(bear_obs) - 2
+            for j = i + 1 to array.size(bear_obs) - 1
+                OrderBlock ob1 = array.get(bear_obs, i)
+                OrderBlock ob2 = array.get(bear_obs, j)
+                resolve_overlap(ob1.b_box, ob2.b_box, ob1.bot_val, ob2.bot_val, atr * 0.4)
+
+    if array.size(bear_fvgs) >= 2
+        for i = 0 to array.size(bear_fvgs) - 2
+            for j = i + 1 to array.size(bear_fvgs) - 1
+                FairValueGap f1 = array.get(bear_fvgs, i)
+                FairValueGap f2 = array.get(bear_fvgs, j)
+                resolve_overlap(f1.b_box, f2.b_box, f1.bot_val, f2.bot_val, atr * 0.4)
+
+    if array.size(bear_obs) > 0 and array.size(bear_fvgs) > 0
+        for i = 0 to array.size(bear_obs) - 1
+            for j = 0 to array.size(bear_fvgs) - 1
+                OrderBlock ob = array.get(bear_obs, i)
+                FairValueGap f = array.get(bear_fvgs, j)
+                resolve_overlap(ob.b_box, f.b_box, ob.bot_val, f.bot_val, atr * 0.4)
+
+// =============================================================================
+// 14. MULTI-TIMEFRAME RETURNS & RELATIVE VOLUME (RVOL)
+// =============================================================================
+
+tbl_txt_size = tbl_text_size_opt == "Tiny" ? size.tiny : (tbl_text_size_opt == "Normal" ? size.normal : size.small)
+
+// Relative Volume (RVol)
+string rvol_tf = timeframe.isweekly ? "W" : timeframe.ismonthly ? "M" : "D"
+[htf_today_vol, htf_avg_vol] = request.security(syminfo.tickerid, rvol_tf, f_rvol_sec(rvol_len), barmerge.gaps_off, barmerge.lookahead_off)
+float rvol_pct = (not na(htf_avg_vol) and htf_avg_vol > 0) ? math.round((htf_today_vol / htf_avg_vol) * 100.0) : 100.0
+
+if show_rvol and rvol_pct >= rvol_threshold
+    rvol_alert := true
+
+// Multi-Timeframe Returns: 1D, 1W, 1M, 1Y
+[d_cur, d_prev] = request.security(syminfo.tickerid, "D", [close, close[1]], barmerge.gaps_off, barmerge.lookahead_off)
+float ret_prev_day = (not na(d_prev) and d_prev > 0) ? ((d_cur - d_prev) / d_prev) * 100.0 : 0.0
+
+[w_cur, w_prev] = request.security(syminfo.tickerid, "W", [close, close[1]], barmerge.gaps_off, barmerge.lookahead_off)
+float ret_1w = (not na(w_prev) and w_prev > 0) ? ((w_cur - w_prev) / w_prev) * 100.0 : 0.0
+
+[m_cur, m_prev] = request.security(syminfo.tickerid, "M", [close, close[1]], barmerge.gaps_off, barmerge.lookahead_off)
+float ret_1m = (not na(m_prev) and m_prev > 0) ? ((m_cur - m_prev) / m_prev) * 100.0 : 0.0
+
+[y_cur, y_prev] = request.security(syminfo.tickerid, "12M", [close, close[1]], barmerge.gaps_off, barmerge.lookahead_off)
+float ret_1y = (not na(y_prev) and y_prev > 0) ? ((y_cur - y_prev) / y_prev) * 100.0 : 0.0
+
+// =============================================================================
+// 15. SMC COMMUNITY PRO & POWERBAR DASHBOARD TABLE
+// =============================================================================
+
+if barstate.islast and show_pb_table
+    string table_position = position.top_right
+    if tbl_pos == "Bottom Right"
+        table_position := position.bottom_right
+    else if tbl_pos == "Top Left"
+        table_position := position.top_left
+    else if tbl_pos == "Bottom Left"
+        table_position := position.bottom_left
+
+    int base_rows = tbl_show_smc_stats ? 7 : 3
+    int total_rows = base_rows + (show_rvol ? 1 : 0) + (show_returns ? 4 : 0)
+    var table smc_table = table.new(table_position, 3, total_rows, bgcolor=tbl_theme == "Dark" ? #1e222d : #ffffff, border_color=tbl_theme == "Dark" ? #363c4e : #e0e3eb, border_width=1)
+
+    color hdr_bg   = tbl_theme == "Dark" ? #2a2e39 : #f0f3fa
+    color hdr_txt  = tbl_theme == "Dark" ? #d1d4dc : #131722
+    color body_txt = tbl_theme == "Dark" ? #ffffff : #000000
+
+    float period_return = not na(pb_first_close) and pb_first_close > 0 ? ((close - pb_first_close) / pb_first_close) * 100.0 : 0.0
+    color ret_color = period_return >= 0 ? #089981 : #f23645
+
+    int cur_r = 1
+
+    if tbl_show_smc_stats
+        table.cell(smc_table, 0, 0, "SMC Metric", bgcolor=hdr_bg, text_color=hdr_txt, text_size=tbl_txt_size)
+        table.cell(smc_table, 1, 0, "Status / Value", bgcolor=hdr_bg, text_color=hdr_txt, text_size=tbl_txt_size)
+        table.cell(smc_table, 2, 0, "Analysis", bgcolor=hdr_bg, text_color=hdr_txt, text_size=tbl_txt_size)
+
+        // Structure Bias
+        string bias_str = market_trend == 1 ? "Bullish 🟢" : (market_trend == -1 ? "Bearish 🔴" : "Neutral ⚪")
+        color  bias_col = market_trend == 1 ? #089981 : (market_trend == -1 ? #f23645 : #9e9e9e)
+        add_tbl_row(smc_table, cur_r, "Market Bias", bias_str, "Structure Flow", bias_col, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        // Dealing Range
+        string pd_str = not na(current_pd_pct) ? (str.tostring(current_pd_pct, "#.#") + "%") : "N/A"
+        string pd_ctx = not na(current_pd_pct) ? (current_pd_pct >= 50.0 ? "Premium (Sell)" : "Discount (Buy)") : "N/A"
+        color  pd_col = not na(current_pd_pct) ? (current_pd_pct >= 50.0 ? #f23645 : #089981) : #9e9e9e
+        add_tbl_row(smc_table, cur_r, "Dealing Range", pd_str, pd_ctx, pd_col, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        // Active Zones
+        int total_obs  = array.size(bull_obs) + array.size(bear_obs)
+        int total_fvgs = array.size(bull_fvgs) + array.size(bear_fvgs)
+        add_tbl_row(smc_table, cur_r, "Active Zones", str.tostring(total_obs) + " OBs · " + str.tostring(total_fvgs) + " FVGs", "Supply / Demand", body_txt, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        // Session POC
+        add_tbl_row(smc_table, cur_r, "Session POC", range_currency + str.tostring(poc_val, "#.##"), "High Vol Level", poc_color, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        // PowerBars (Bullish Purple & Bearish Deep Brown)
+        string pb_counts_display = str.tostring(pb_bull_count) + " 🟣 · " + str.tostring(pb_bear_count) + " 🟤"
+        add_tbl_row(smc_table, cur_r, "PowerBars (" + pb_lookback_period + ")", pb_counts_display, (period_return >= 0 ? "+" : "") + str.tostring(period_return, "#.##") + "%", purple_candle_color, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        // Pocket Pivots
+        add_tbl_row(smc_table, cur_r, "Pocket Pivots (" + pb_lookback_period + ")", str.tostring(pp_count_window) + " 🎯", "Volume Lens PP", pp_color, body_txt, tbl_txt_size)
+        cur_r += 1
+    else
+        table.cell(smc_table, 0, 0, "Metric", bgcolor=hdr_bg, text_color=hdr_txt, text_size=tbl_txt_size)
+        table.cell(smc_table, 1, 0, "Value", bgcolor=hdr_bg, text_color=hdr_txt, text_size=tbl_txt_size)
+        table.cell(smc_table, 2, 0, "Context", bgcolor=hdr_bg, text_color=hdr_txt, text_size=tbl_txt_size)
+
+        string pb_period_str = str.tostring(pb_bull_count) + " 🟣 " + str.tostring(pb_bear_count) + " 🟤 · " + str.tostring(pp_count_window) + " 🎯"
+        add_tbl_row(smc_table, cur_r, "Period Signals", pb_period_str, pb_lookback_period + " Count", purple_candle_color, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        add_tbl_row(smc_table, cur_r, "Window Return", (period_return >= 0 ? "+" : "") + str.tostring(period_return, "#.##") + "%", pb_lookback_period + " Return", ret_color, body_txt, tbl_txt_size)
+        cur_r += 1
+
+    // Relative Volume (RVol) Row
+    if show_rvol
+        color rvol_col = rvol_pct >= rvol_threshold ? #089981 : (rvol_pct <= 50.0 ? #f23645 : #ff9800)
+        string rvol_badge = rvol_pct >= rvol_threshold ? " 🚀" : (rvol_pct <= 50.0 ? " ❄️" : " ⚖️")
+        add_tbl_row(smc_table, cur_r, "Relative Vol (" + rvol_tf + ")", str.tostring(rvol_pct, "#") + "%" + rvol_badge, rvol_tf + "-RVol (" + str.tostring(rvol_len) + " MA)", rvol_col, body_txt, tbl_txt_size)
+        cur_r += 1
+
+    // Multi-Timeframe Return Rows
+    if show_returns
+        color c_prev = ret_prev_day >= 0 ? #089981 : #f23645
+        add_tbl_row(smc_table, cur_r, "Prev Day (1D)", (ret_prev_day >= 0 ? "+" : "") + str.tostring(ret_prev_day, "#.##") + "%", "Daily Change", c_prev, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        color c_1w = ret_1w >= 0 ? #089981 : #f23645
+        add_tbl_row(smc_table, cur_r, "1 Week (1W)", (ret_1w >= 0 ? "+" : "") + str.tostring(ret_1w, "#.##") + "%", "Weekly Change", c_1w, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        color c_1m = ret_1m >= 0 ? #089981 : #f23645
+        add_tbl_row(smc_table, cur_r, "1 Month (1M)", (ret_1m >= 0 ? "+" : "") + str.tostring(ret_1m, "#.##") + "%", "Monthly Change", c_1m, body_txt, tbl_txt_size)
+        cur_r += 1
+
+        color c_1y = ret_1y >= 0 ? #089981 : #f23645
+        add_tbl_row(smc_table, cur_r, "1 Year (1Y)", (ret_1y >= 0 ? "+" : "") + str.tostring(ret_1y, "#.##") + "%", "Yearly Change", c_1y, body_txt, tbl_txt_size)
+        cur_r += 1
+
+// =============================================================================
+// 16. ALERTS CONFIGURATION
+// =============================================================================
+
+alertcondition(bull_ob_created,    title="Bullish Order Block Created", message="[SMC] Bullish Order Block formed on {{ticker}} ({{interval}})")
+alertcondition(bear_ob_created,    title="Bearish Order Block Created", message="[SMC] Bearish Order Block formed on {{ticker}} ({{interval}})")
+alertcondition(bull_fvg_created,   title="Bullish FVG Formed",          message="[FVG] Bullish Fair Value Gap formed on {{ticker}} ({{interval}})")
+alertcondition(bear_fvg_created,   title="Bearish FVG Formed",          message="[FVG] Bearish Fair Value Gap formed on {{ticker}} ({{interval}})")
+alertcondition(tl_bull_break,      title="Resistance TL Breakout",      message="[TL] Resistance Trendline breakout on {{ticker}} ({{interval}})")
+alertcondition(tl_bear_break,      title="Support TL Breakdown",        message="[TL] Support Trendline breakdown on {{ticker}} ({{interval}})")
+alertcondition(bull_bos_alert,     title="Bullish Break of Structure",  message="[SMC] Bullish BOS confirmed on {{ticker}} ({{interval}})")
+alertcondition(bear_bos_alert,     title="Bearish Break of Structure",  message="[SMC] Bearish BOS confirmed on {{ticker}} ({{interval}})")
+alertcondition(choch_alert,        title="Change of Character (CHoCH)", message="[SMC] Trend reversal CHoCH confirmed on {{ticker}} ({{interval}})")
+alertcondition(eqh_alert,          title="Equal Highs (EQH) Liquidity", message="[Liquidity] Equal Highs (EQH) pool formed on {{ticker}} ({{interval}})")
+alertcondition(eql_alert,          title="Equal Lows (EQL) Liquidity",  message="[Liquidity] Equal Lows (EQL) pool formed on {{ticker}} ({{interval}})")
+alertcondition(powerbar_alert,     title="PowerBar Momentum Signal",    message="[PowerBar] Momentum Bar detected on {{ticker}} ({{interval}})")
+alertcondition(pb_bull_alert,      title="Bullish PowerBar (Purple)",   message="[PowerBar] Bullish Purple Momentum Bar detected on {{ticker}} ({{interval}})")
+alertcondition(pb_bear_alert,      title="Bearish PowerBar (Deep Brown)", message="[PowerBar] Bearish Deep Brown Momentum Bar detected on {{ticker}} ({{interval}})")
+alertcondition(pocket_pivot_alert, title="Pocket Pivot Signal",         message="[Pocket Pivot] Volume Lens Pocket Pivot detected on {{ticker}} ({{interval}})")
+alertcondition(rvol_alert,         title="High Relative Volume (RVol)", message="[RVol] High Relative Volume surge detected on {{ticker}} ({{interval}})")
+alertcondition(fib_hit_05,         title="Price Retraced to 0.50 Fib",  message="[Fib] Price retraced to 0.50 Equilibrium level on {{ticker}} ({{interval}})")
+alertcondition(fib_hit_618,        title="Price Retraced to 0.618 Fib", message="[Fib] Price retraced to 0.618 Golden Pocket level on {{ticker}} ({{interval}})")

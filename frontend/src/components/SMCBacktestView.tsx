@@ -130,7 +130,7 @@ interface SMCBacktestViewProps {
   onNavigate: (view: string) => void;
 }
 
-const PRESET_STOCKS = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "TATAMOTORS", "SBIN"];
+const PRESET_STOCKS = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "TMPV", "SBIN"];
 
 export default function SMCBacktestView({
   symbol,

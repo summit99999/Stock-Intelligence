@@ -63,6 +63,7 @@ from app.services.trading_calendar_service import (
     is_trading_holiday,
     is_special_trading_session,
     is_cas_eligible_security,
+    get_expected_session_schedule,
     MIN_REGULAR_SESSION_BARS_5M,
 )
 
@@ -272,13 +273,12 @@ def calculate_historical_time_of_day_rvol(
         )
 
         # 5. Extract continuous cumulative volume up to target_time
-        # Under CAS, continuous bars are only up to 15:10:00 (bar start time).
-        # Auction bars (15:15, 15:25) represent post-continuous closing auction.
-        is_cas, _ = is_cas_eligible_security(symbol, d)
-        if is_cas:
-            continuous_bars = [b for b in s_bars if b["time"] <= "15:10:00"]
-        else:
-            continuous_bars = [b for b in s_bars if b["time"] <= "15:25:00"]
+        # Under CAS V1, continuous bars are up to 15:10:00 (bar start time).
+        # Under CAS V2 or non-CAS, continuous bars are up to 15:25:00.
+        # Closing auction trade confirmation bars are strictly excluded from continuous baselines.
+        sched_d = get_expected_session_schedule(symbol, d)
+        cutoff_time = sched_d.get("last_continuous_bar_time") or ("15:10:00" if is_cas_eligible_security(symbol, d)[0] else "15:25:00")
+        continuous_bars = [b for b in s_bars if b["time"] <= cutoff_time]
 
         bars_up_to_t = [b for b in continuous_bars if b["time"] <= target_time]
         if not bars_up_to_t:
@@ -352,13 +352,11 @@ def calculate_historical_time_of_day_rvol(
         }
 
     # If today_cumulative_volume was not supplied (or <= 0), attempt to derive it from today's observed bars
+    curr_sched = get_expected_session_schedule(symbol, effective_today)
     if today_cumulative_volume <= 0.0 and effective_today in sessions:
         today_s_bars = sessions[effective_today]
-        is_cas_today, _ = is_cas_eligible_security(symbol, effective_today)
-        if is_cas_today:
-            today_cont_bars = [b for b in today_s_bars if b["time"] <= "15:10:00"]
-        else:
-            today_cont_bars = [b for b in today_s_bars if b["time"] <= "15:25:00"]
+        today_cutoff_time = curr_sched.get("last_continuous_bar_time") or ("15:10:00" if is_cas_eligible_security(symbol, effective_today)[0] else "15:25:00")
+        today_cont_bars = [b for b in today_s_bars if b["time"] <= today_cutoff_time]
         today_bars_up_to_t = [b for b in today_cont_bars if b["time"] <= target_time]
         today_cumulative_volume = float(sum(b["volume"] for b in today_bars_up_to_t))
 
@@ -378,6 +376,8 @@ def calculate_historical_time_of_day_rvol(
         "tod_rvol_status": active_status,
         "tod_source": active_source,
         "tod_data_quality": active_quality,
+        "provider": active_source,
+        "schedule_version": curr_sched.get("schedule_version", "STANDARD_SCHEDULE"),
         "today_cumulative_volume": round(today_cumulative_volume, 1),
         "numerator": round(today_cumulative_volume, 1),
         "historical_avg_volume": round(avg_hist_cum_vol, 1),

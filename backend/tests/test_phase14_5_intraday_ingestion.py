@@ -43,7 +43,9 @@ def _provider_frame() -> pd.DataFrame:
     )
 
 
-def test_yfinance_adapter_normalizes_provider_response_and_throttles(monkeypatch):
+def test_yfinance_adapter_normalizes_provider_response_and_throttles(
+    monkeypatch, prepared_current_instrument_database
+):
     import yfinance as yf
 
     frame = _provider_frame()
@@ -89,7 +91,9 @@ def test_yfinance_adapter_normalizes_provider_response_and_throttles(monkeypatch
     assert sleeps == [pytest.approx(2.0)]
 
 
-def test_yfinance_adapter_rejects_missing_volume_column(monkeypatch):
+def test_yfinance_adapter_rejects_missing_volume_column(
+    monkeypatch, prepared_current_instrument_database
+):
     import yfinance as yf
 
     frame = _provider_frame().drop(columns=["Volume"])

@@ -140,7 +140,7 @@ interface SmartMoneyConceptsViewProps {
 
 const QUICK_STOCKS = [
   "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
-  "TATAMOTORS", "SBIN", "BHARTIARTL", "ITC", "LT"
+  "TMPV", "SBIN", "BHARTIARTL", "ITC", "LT"
 ];
 
 export default function SmartMoneyConceptsView({

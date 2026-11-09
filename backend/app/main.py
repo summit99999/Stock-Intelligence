@@ -21,6 +21,7 @@ from app.routers import (
     ai_planner,
     dhan_auth,
     fundamentals,
+    instruments,
     market_data,
     market_feed,
     market_intelligence,
@@ -82,7 +83,7 @@ if frontend_origin_env:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.pages\.dev",
+    allow_origin_regex=r"https://.*(\.pages\.dev|\.vercel\.app|\.onrender\.com|\.railway\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -145,3 +146,4 @@ app.include_router(market_intelligence.router)
 app.include_router(market_movers.router)
 app.include_router(money_flow.router)
 app.include_router(unified_research.router)
+app.include_router(instruments.router)

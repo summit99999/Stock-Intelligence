@@ -31,6 +31,8 @@ class DhanInstrument:
     tick_size: float = 0.05
     lot_size: int = 1
     series: Optional[str] = "EQ"
+    effective_from: Optional[str] = None
+    effective_to: Optional[str] = None
 
 
 # Pre-mapped benchmark instruments (Validation set required by specification)
@@ -136,7 +138,11 @@ UNIVERSE_MAP: dict[str, DhanInstrument] = {
     "INFY": DhanInstrument("INFY", "1594", "NSE", "NSE_EQ", "Infosys"),
     "KPITTECH": DhanInstrument("KPITTECH", "9683", "NSE", "NSE_EQ", "KPIT Technologies"),
     "LT": DhanInstrument("LT", "11483", "NSE", "NSE_EQ", "Larsen & Toubro"),
-    "LTIM": DhanInstrument("LTIM", "17818", "NSE", "NSE_EQ", "LTIMindtree"),
+    "LTM": DhanInstrument("LTM", "17818", "NSE", "NSE_EQ", "LTIMindtree"),
+    "LTIM": DhanInstrument(
+        "LTIM", "17818", "NSE", "NSE_EQ", "LTIMindtree",
+        effective_to="2026-02-26",
+    ),
     "MARUTI": DhanInstrument("MARUTI", "10999", "NSE", "NSE_EQ", "Maruti Suzuki"),
     "ONGC": DhanInstrument("ONGC", "2475", "NSE", "NSE_EQ", "Oil & Natural Gas Corporation"),
     "POLYCAB": DhanInstrument("POLYCAB", "9590", "NSE", "NSE_EQ", "Polycab"),
@@ -145,7 +151,10 @@ UNIVERSE_MAP: dict[str, DhanInstrument] = {
     "SBIN": DhanInstrument("SBIN", "3045", "NSE", "NSE_EQ", "State Bank of India"),
     "SUNPHARMA": DhanInstrument("SUNPHARMA", "3351", "NSE", "NSE_EQ", "Sun Pharmaceutical"),
     "TATAELXSI": DhanInstrument("TATAELXSI", "3411", "NSE", "NSE_EQ", "Tata Elxsi"),
-    "TATAMOTORS": DhanInstrument("TATAMOTORS", "3456", "NSE", "NSE_EQ", "Tata Motors"),
+    "TMPV": DhanInstrument(
+        "TMPV", "3456", "NSE", "NSE_EQ", "Tata Motors Passenger Vehicles",
+    ),
+    "TMCV": DhanInstrument("TMCV", "759782", "NSE", "NSE_EQ", "Tata Motors Commercial Vehicles"),
     "TCS": BENCHMARK_MAP["TCS"],
     "TITAN": DhanInstrument("TITAN", "3506", "NSE", "NSE_EQ", "Titan"),
     "TRENT": DhanInstrument("TRENT", "1964", "NSE", "NSE_EQ", "Trent"),
@@ -158,8 +167,8 @@ class DhanInstrumentService:
 
     def __init__(self, scrip_csv_path: Optional[str] = None):
         self.csv_path = scrip_csv_path or SCRIP_MASTER_FILE
-        self._by_symbol: dict[str, DhanInstrument] = {}
-        self._by_id: dict[tuple[str, str], DhanInstrument] = {}  # (segment, security_id) -> inst
+        self._by_symbol: dict[str, list[DhanInstrument]] = {}
+        self._by_id: dict[tuple[str, str, str, str], list[DhanInstrument]] = {}
         self._is_csv_loaded = False
 
         # Prepopulate with fast static lookup tables
@@ -168,43 +177,108 @@ class DhanInstrumentService:
     def _init_defaults(self):
         """Populate dictionaries with verified benchmark and universe instruments."""
         for inst in list(BENCHMARK_MAP.values()) + list(UNIVERSE_MAP.values()):
-            self._by_symbol[inst.symbol.upper()] = inst
-            self._by_id[(inst.exchange_segment, str(inst.security_id))] = inst
+            self._index_instrument(inst)
 
-    def get_instrument(self, symbol_or_id: str, exchange_segment: Optional[str] = None) -> Optional[DhanInstrument]:
-        """Look up an instrument by symbol or security ID."""
+    def _index_instrument(self, inst: DhanInstrument) -> None:
+        symbol_candidates = self._by_symbol.setdefault(inst.symbol.upper(), [])
+        if inst not in symbol_candidates:
+            symbol_candidates.append(inst)
+        id_key = (
+            inst.exchange.upper(),
+            inst.exchange_segment.upper(),
+            inst.instrument_type.upper(),
+            str(inst.security_id),
+        )
+        id_candidates = self._by_id.setdefault(id_key, [])
+        if inst not in id_candidates:
+            id_candidates.append(inst)
+
+    @staticmethod
+    def _matches_date(inst: DhanInstrument, query_date: str) -> bool:
+        return (
+            inst.effective_from is not None
+            and query_date >= inst.effective_from
+            and (not inst.effective_to or query_date <= inst.effective_to)
+        )
+
+    def get_instrument(
+        self,
+        symbol_or_id: str,
+        exchange_segment: Optional[str] = None,
+        exchange: Optional[str] = None,
+        instrument_type: Optional[str] = None,
+        query_date: Optional[str] = None,
+    ) -> Optional[DhanInstrument]:
+        """Resolve by symbol or ID within the supplied exchange namespace."""
         key = symbol_or_id.strip().upper()
+        symbol_lookup = bool(self._by_symbol.get(key))
+        if query_date:
+            from datetime import date
+            date.fromisoformat(query_date)
 
-        # Try symbol lookup
-        if key in self._by_symbol:
-            return self._by_symbol[key]
+        candidates = list(self._by_symbol.get(key, []))
+        if not candidates:
+            sec_id = str(symbol_or_id).strip()
+            candidates = [
+                inst
+                for (exch, seg, kind, candidate_id), instruments in self._by_id.items()
+                if candidate_id == sec_id
+                and (not exchange or exch == exchange.upper())
+                and (not exchange_segment or seg == exchange_segment.upper())
+                and (not instrument_type or kind == instrument_type.upper())
+                for inst in instruments
+            ]
 
-        # Try (segment, security_id) lookup
-        if exchange_segment:
-            id_key = (exchange_segment, str(symbol_or_id).strip())
-            if id_key in self._by_id:
-                return self._by_id[id_key]
+        candidates = [
+            inst for inst in candidates
+            if (not exchange or inst.exchange.upper() == exchange.upper())
+            and (not exchange_segment or inst.exchange_segment.upper() == exchange_segment.upper())
+            and (not instrument_type or inst.instrument_type.upper() == instrument_type.upper())
+        ]
+        if not exchange and symbol_lookup:
+            nse_candidates = [inst for inst in candidates if inst.exchange.upper() == "NSE"]
+            if nse_candidates:
+                candidates = nse_candidates
+        if query_date:
+            candidates = [inst for inst in candidates if self._matches_date(inst, query_date)]
+        else:
+            candidates = [inst for inst in candidates if not inst.effective_to]
 
-        # Try finding across segments for security_id
-        for (seg, sec_id), inst in self._by_id.items():
-            if sec_id == str(symbol_or_id).strip():
-                return inst
+        unique_candidates: list[DhanInstrument] = []
+        seen_identities: set[tuple[str, str, str, str]] = set()
+        for inst in candidates:
+            identity = (
+                inst.exchange.upper(),
+                inst.exchange_segment.upper(),
+                inst.instrument_type.upper(),
+                str(inst.security_id),
+            )
+            if identity not in seen_identities:
+                unique_candidates.append(inst)
+                seen_identities.add(identity)
+        candidates = unique_candidates
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            return None
 
         # Try lazy loading full CSV if available
         if not self._is_csv_loaded and os.path.exists(self.csv_path):
             self.load_scrip_master()
-            return self.get_instrument(symbol_or_id, exchange_segment)
+            return self.get_instrument(
+                symbol_or_id, exchange_segment, exchange, instrument_type, query_date
+            )
 
         return None
 
     def get_benchmark_instruments(self) -> list[DhanInstrument]:
         """Return the benchmark validation set: RELIANCE, TCS, HDFCBANK, NIFTY 50."""
         keys = ["RELIANCE", "TCS", "HDFCBANK", "NIFTY 50", "BANK NIFTY", "SENSEX", "INDIA VIX"]
-        return [self._by_symbol[k] for k in keys if k in self._by_symbol]
+        return [self._by_symbol[k][0] for k in keys if self._by_symbol.get(k)]
 
     def get_universe_instruments(self) -> list[DhanInstrument]:
-        """Return all 31 universe stocks."""
-        return list(UNIVERSE_MAP.values())
+        """Return current universe instruments, excluding dated historical aliases."""
+        return [inst for inst in UNIVERSE_MAP.values() if not inst.effective_to]
 
     def build_rest_payload(self, instruments: list[DhanInstrument]) -> dict[str, list[int]]:
         """
@@ -285,10 +359,7 @@ class DhanInstrumentService:
                         series=series,
                     )
                     # Index by (seg, sec_id)
-                    self._by_id[(std_seg, sec_id)] = inst
-                    # Index by symbol if not already present
-                    if sym and sym.upper() not in self._by_symbol:
-                        self._by_symbol[sym.upper()] = inst
+                    self._index_instrument(inst)
                     count += 1
 
             self._is_csv_loaded = True

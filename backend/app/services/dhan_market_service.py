@@ -202,7 +202,17 @@ class DhanMarketService:
         if not seg or not sec_id:
             return None
 
-        inst = self.instrument_service.get_instrument(sec_id, seg)
+        exchange = parsed_packet.get("exchange")
+        if not exchange:
+            segment_name = str(seg).upper()
+            exchange = (
+                "BSE" if segment_name.startswith("BSE")
+                else "NSE" if segment_name.startswith("NSE")
+                else None
+            )
+        inst = self.instrument_service.get_instrument(
+            sec_id, exchange_segment=seg, exchange=exchange
+        )
         symbol = inst.symbol if inst else f"{seg}_{sec_id}"
         now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
 

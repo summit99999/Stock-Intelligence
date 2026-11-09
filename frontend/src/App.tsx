@@ -58,7 +58,7 @@ const defaultMovers = [
   { symbol: "TRENT", name: "Trent Limited", price: "6,245.00", change: 4.82, volume: "12.5L" },
   { symbol: "BEL", name: "Bharat Electronics", price: "312.40", change: 3.65, volume: "84.2L" },
   { symbol: "HAL", name: "Hindustan Aeronautics", price: "4,120.00", change: 2.91, volume: "18.4L" },
-  { symbol: "TATAMOTORS", name: "Tata Motors", price: "725.30", change: -2.35, volume: "46.1L" },
+  { symbol: "TMPV", name: "Tata Motors PV", price: "292.30", change: -2.35, volume: "46.1L" },
   { symbol: "ONGC", name: "Oil & Natural Gas Corp.", price: "268.10", change: -1.82, volume: "32.8L" },
 ];
 

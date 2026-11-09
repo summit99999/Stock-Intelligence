@@ -553,27 +553,48 @@ NSE_SPECIAL_SESSIONS: Dict[str, Dict[str, Any]] = {
 STANDARD_SESSION_BARS_5M = 75
 MIN_REGULAR_SESSION_BARS_5M = 60
 
-# NSE Closing Auction Session (CAS) Constants (Phase 14.6 Architecture)
-# Grounded in official NSE Circulars:
-# 1. NSE/CMTR/72394 (Jan 19, 2026) - Framework for Closing Auction Session
-# 2. NSE/CMTR/73362 (Mar 18, 2026) - Operational parameters & timings
-# 3. NSE/CMTR/74466 (May 29, 2026) - Go-live schedule effective August 03, 2026
-CAS_EFFECTIVE_DATE = "2026-08-03"
+# ---------------------------------------------------------------------------
+# Effective-Dated NSE Closing Auction Session (CAS) Architecture (Phase 14.8)
+# Grounded in authoritative exchange and regulatory circulars:
+# 1. NSE Circular NSE/CMTR/72394 (Jan 19, 2026) - Framework for Closing Auction Session
+# 2. NSE Circular NSE/CMTR/73362 (Mar 18, 2026) - Operational parameters & timings
+# 3. NSE Circular NSE/CMTR/74466 (May 29, 2026) - Go-live schedule effective August 03, 2026
+# 4. SEBI Circular HO/47/11/11(3)2025-MRD-POD2/I/23843/2026 (Oct 15, 2026) -
+#    Review and Modification of Closing Auction Session (CAS), Market Timings and
+#    Derivatives Settlement Framework effective December 07, 2026.
+# ---------------------------------------------------------------------------
+
+CAS_V1_HISTORICAL_START = "2026-08-03"
+CAS_V2_REVISED_START = "2026-12-07"
+
+# Backward-compatibility aliases
+CAS_EFFECTIVE_DATE = CAS_V1_HISTORICAL_START
 CAS_CONTINUOUS_BARS_5M = 72
+
+
+class CASSymbolScheduleVersion(str, Enum):
+    CAS_V1_HISTORICAL = "CAS_V1_HISTORICAL"  # 2026-08-03 to 2026-12-06: 72 continuous bars (09:15-15:10), CAS 15:15-15:35
+    CAS_V2_REVISED = "CAS_V2_REVISED"        # 2026-12-07 onward: 75 continuous bars (09:15-15:25), CAS 15:30-15:40
+    STANDARD_NON_CAS = "STANDARD_NON_CAS"    # Non-CAS cash equities: 75 continuous bars (09:15-15:25)
+    PRE_CAS_STANDARD = "PRE_CAS_STANDARD"    # Prior to 2026-08-03: 75 continuous bars (09:15-15:25)
+    SPECIAL_TRUNCATED = "SPECIAL_TRUNCATED"  # Special sessions (Muhurat, DR Drills)
+
+
 CAS_CIRCULAR_REFERENCES: Dict[str, str] = {
     "FRAMEWORK": "NSE/CMTR/72394",
     "OPERATIONAL_PARAMETERS": "NSE/CMTR/73362",
     "GO_LIVE": "NSE/CMTR/74466",
+    "SEBI_REVISED_CAS_2026": "SEBI/HO/47/11/11(3)2025-MRD-POD2/I/23843/2026",
 }
 
 # Authoritative tracked universe of NSE F&O-eligible securities subject to CAS
 NSE_FO_SECURITIES: set[str] = {
     "ADANIENT", "ASIANPAINT", "BAJFINANCE", "BEL", "BHARTIARTL",
-    "CDSL", "COALINDIA", "DEEPAKNTR", "DIXON", "HAL",
+    "CDSL", "COALINDIA", "DIXON", "HAL",
     "HCLTECH", "HDFCBANK", "HINDUNILVR", "ICICIBANK", "INFY",
-    "KPITTECH", "LT", "LTIM", "MARUTI", "ONGC",
+    "KPITTECH", "LT", "LTIM", "LTM", "MARUTI", "ONGC",
     "POLYCAB", "POWERGRID", "RELIANCE", "SBIN", "SUNPHARMA",
-    "TATAELXSI", "TATAMOTORS", "TCS", "TITAN", "TRENT", "WIPRO"
+    "TATAELXSI", "TATAMOTORS", "TMPV", "TCS", "TITAN", "TRENT", "WIPRO"
 }
 
 
@@ -585,18 +606,16 @@ def is_cas_eligible_security(
     Determines whether a security is eligible for and governed by the
     NSE Closing Auction Session (CAS) schedule on a given date.
     
-    Regulatory Basis:
-    - NSE Circular NSE/CMTR/72394 (Jan 19, 2026): Framework for Closing Auction.
-    - NSE Circular NSE/CMTR/73362 (Mar 18, 2026): Operational Timings & Order Matching.
-    - NSE Circular NSE/CMTR/74466 (May 29, 2026): Go-Live Date August 03, 2026 for F&O-eligible cash equities.
-    
-    Session Schedule under CAS:
-    - Continuous Trading: 09:15:00 to 15:15:00 IST (72 five-minute bars: 09:15:00 to 15:10:00).
-    - Closing Auction Session (CAS): 15:15:00 to 15:35:00 IST:
-      * 15:15 - 15:20 IST: Reference price determination / VWAP calculation transition.
-      * 15:20 - 15:25 IST: Order collection / entry.
-      * 15:25 - 15:30 IST: Order modification with random closure.
-      * 15:30 - 15:35 IST: Order matching & trade confirmation block execution.
+    Effective-Dated Regulatory Basis:
+    - Pre-2026-08-03: Standard non-CAS continuous schedule (75 bars).
+    - 2026-08-03 to 2026-12-06 (CAS V1 Historical):
+      * Grounded in NSE Circulars NSE/CMTR/72394, 73362, 74466.
+      * Continuous trading: 09:15:00 to 15:15:00 IST (72 five-minute bars: 09:15 to 15:10).
+      * CAS Window: 15:15:00 to 15:35:00 IST.
+    - 2026-12-07 onward (CAS V2 Revised):
+      * Grounded in SEBI Circular HO/47/11/11(3)2025-MRD-POD2/I/23843/2026 (Oct 15, 2026).
+      * Continuous trading: 09:15:00 to 15:30:00 IST (75 five-minute bars: 09:15 to 15:25).
+      * CAS Window: 15:30:00 to 15:40:00 IST (10-minute window).
     """
     if not symbol:
         return False, "NO_SYMBOL_PROVIDED: Default non-CAS 75-bar continuous schedule applied"
@@ -604,13 +623,16 @@ def is_cas_eligible_security(
     d_str, _ = _normalize_date_str(session_date)
     clean_sym = symbol.strip().split(".")[0].upper()
 
-    if d_str < CAS_EFFECTIVE_DATE:
-        return False, f"PRE_CAS_DATE: Session date {d_str} precedes CAS go-live date {CAS_EFFECTIVE_DATE} (NSE/CMTR/74466); 75 continuous bars apply"
+    if clean_sym not in NSE_FO_SECURITIES:
+        return False, f"NON_CAS_SECURITY: Security {clean_sym} is not in F&O contract eligibility list; standard 75-bar continuous trading applies"
 
-    if clean_sym in NSE_FO_SECURITIES:
-        return True, f"CAS_ELIGIBLE: Security {clean_sym} is F&O-eligible subject to Closing Auction Session effective {CAS_EFFECTIVE_DATE} (NSE/CMTR/74466)"
+    if d_str < CAS_V1_HISTORICAL_START:
+        return False, f"PRE_CAS_DATE: Session date {d_str} precedes CAS go-live date {CAS_V1_HISTORICAL_START} (NSE/CMTR/74466); 75 continuous bars apply"
 
-    return False, f"NON_CAS_SECURITY: Security {clean_sym} is not in F&O contract eligibility list; standard 75-bar continuous trading applies"
+    if d_str < CAS_V2_REVISED_START:
+        return True, f"CAS_ELIGIBLE_V1_HISTORICAL: Security {clean_sym} governed by historical CAS schedule under NSE/CMTR/74466 (09:15-15:15 continuous, 72 bars; CAS 15:15-15:35)"
+
+    return True, f"CAS_ELIGIBLE_V2_REVISED: Security {clean_sym} governed by revised SEBI CAS framework under HO/47/11/11(3)2025-MRD-POD2/I/23843/2026 effective {CAS_V2_REVISED_START} (09:15-15:30 continuous, 75 bars; CAS 15:30-15:40)"
 
 
 def get_expected_session_schedule(
@@ -620,12 +642,14 @@ def get_expected_session_schedule(
 ) -> Dict[str, Any]:
     """
     Returns the authoritative exchange session schedule, interval timing boundaries,
-    and completeness expectations for a given security and date.
+    completeness expectations, and exact schedule version for a given security and date.
     
     Distinguishes:
-    1. Special sessions (Muhurat Trading, DR drills).
-    2. Post-Aug 3, 2026 CAS-eligible equities (72 continuous bars 09:15 to 15:10 + CAS window).
-    3. Standard regular sessions (75 continuous bars 09:15 to 15:25).
+    1. Special sessions (Muhurat Trading, DR drills) -> SPECIAL_TRUNCATED.
+    2. Historical CAS equities (2026-08-03 to 2026-12-06) -> CAS_V1_HISTORICAL (72 continuous bars 09:15 to 15:10 + CAS 15:15-15:35).
+    3. Revised SEBI CAS equities (2026-12-07 onward) -> CAS_V2_REVISED (75 continuous bars 09:15 to 15:25 + CAS 15:30-15:40).
+    4. Pre-CAS equities (< 2026-08-03) -> PRE_CAS_STANDARD (75 continuous bars 09:15 to 15:25).
+    5. Standard non-CAS cash equities -> STANDARD_NON_CAS (75 continuous bars 09:15 to 15:25).
     """
     d_str, _ = _normalize_date_str(session_date)
     is_trading, status_reason = is_trading_day(d_str)
@@ -639,9 +663,11 @@ def get_expected_session_schedule(
             "is_trading_day": False,
             "status_reason": status_reason,
             "session_type": "NON_TRADING_DAY",
+            "schedule_version": "NON_TRADING_DAY",
             "is_cas_eligible": False,
             "continuous_start_time": None,
             "continuous_end_time": None,
+            "last_continuous_bar_time": None,
             "expected_continuous_bars": 0,
             "expected_continuous_timestamps": [],
             "has_closing_auction": False,
@@ -650,6 +676,8 @@ def get_expected_session_schedule(
             "acceptable_auction_timestamps": [],
             "timestamp_convention": "BAR_START_TIME",
             "circular_references": [],
+            "reference_price_window": None,
+            "derivatives_settlement_window": None,
         }
 
     is_special, special_name, special_info = is_special_trading_session(d_str)
@@ -678,12 +706,14 @@ def get_expected_session_schedule(
             "is_trading_day": True,
             "status_reason": f"SPECIAL_SESSION: {special_name}",
             "session_type": special_info.get("type", "SPECIAL_TRUNCATED"),
+            "schedule_version": CASSymbolScheduleVersion.SPECIAL_TRUNCATED.value,
             "is_cas_eligible": False,
             "continuous_start_time": exp_times[0] if exp_times else None,
             "continuous_end_time": (
                 special_info.get("trading_hours", "").split("-")[-1].replace(" IST", "").strip() + ":00"
                 if "-" in special_info.get("trading_hours", "") else None
             ),
+            "last_continuous_bar_time": exp_times[-1] if exp_times else None,
             "expected_continuous_bars": exp_bars,
             "expected_continuous_timestamps": exp_times,
             "has_closing_auction": False,
@@ -692,57 +722,114 @@ def get_expected_session_schedule(
             "acceptable_auction_timestamps": [],
             "timestamp_convention": "BAR_START_TIME",
             "circular_references": [circ] if circ else [],
+            "reference_price_window": "SPECIAL_SESSION_WEIGHTED_AVERAGE",
+            "derivatives_settlement_window": "SPECIAL_SESSION_WEIGHTED_AVERAGE",
         }
 
     # Regular session
     is_cas, cas_reason = is_cas_eligible_security(clean_sym, d_str)
 
     if is_cas and interval == "5m":
-        # CAS schedule: continuous trading ends at 15:15:00 IST.
-        # 72 bars start at 09:15:00 and the last continuous bar starts at 15:10:00 (ends at 15:15:00).
-        exp_times = [
-            f"{9 + (15 + i * 5) // 60:02d}:{(15 + i * 5) % 60:02d}:00"
-            for i in range(72)
-        ]
-        return {
-            "symbol": clean_sym,
-            "session_date": d_str,
-            "is_trading_day": True,
-            "status_reason": cas_reason,
-            "session_type": "REGULAR_CAS",
-            "is_cas_eligible": True,
-            "continuous_start_time": "09:15:00",
-            "continuous_end_time": "15:15:00",
-            "expected_continuous_bars": 72,
-            "expected_continuous_timestamps": exp_times,
-            "has_closing_auction": True,
-            "auction_start_time": "15:15:00",
-            "auction_end_time": "15:35:00",
-            "acceptable_auction_timestamps": ["15:15:00", "15:25:00", "15:30:00"],
-            "timestamp_convention": "BAR_START_TIME",
-            "circular_references": ["NSE/CMTR/72394", "NSE/CMTR/73362", "NSE/CMTR/74466"],
-        }
+        if d_str < CAS_V2_REVISED_START:
+            # Historical CAS schedule (V1: 2026-08-03 to 2026-12-06): continuous trading ends at 15:15:00 IST.
+            # 72 bars start at 09:15:00 and the last continuous bar starts at 15:10:00 (ends at 15:15:00).
+            exp_times = [
+                f"{9 + (15 + i * 5) // 60:02d}:{(15 + i * 5) % 60:02d}:00"
+                for i in range(72)
+            ]
+            return {
+                "symbol": clean_sym,
+                "session_date": d_str,
+                "is_trading_day": True,
+                "status_reason": cas_reason,
+                "session_type": "REGULAR_CAS_HISTORICAL",
+                "schedule_version": CASSymbolScheduleVersion.CAS_V1_HISTORICAL.value,
+                "is_cas_eligible": True,
+                "continuous_start_time": "09:15:00",
+                "continuous_end_time": "15:15:00",
+                "last_continuous_bar_time": "15:10:00",
+                "expected_continuous_bars": 72,
+                "expected_continuous_timestamps": exp_times,
+                "has_closing_auction": True,
+                "auction_start_time": "15:15:00",
+                "auction_end_time": "15:35:00",
+                "acceptable_auction_timestamps": ["15:15:00", "15:20:00", "15:25:00", "15:30:00"],
+                "timestamp_convention": "BAR_START_TIME",
+                "circular_references": ["NSE/CMTR/72394", "NSE/CMTR/73362", "NSE/CMTR/74466"],
+                "reference_price_window": "14:45:00-15:15:00 IST (30m continuous VWAP)",
+                "derivatives_settlement_window": "CAS Closing Price (15:30-15:35 matching)",
+                "order_entry_window": "15:20:00-15:25:00 IST",
+                "random_closure_window": "15:25:00-15:30:00 IST",
+                "order_matching_time": "15:30:00-15:35:00 IST",
+                "post_close_timing": "15:40:00-16:00:00 IST",
+            }
+        else:
+            # Revised SEBI CAS schedule (V2: effective 2026-12-07 onward):
+            # Continuous trading is restored to 09:15:00–15:30:00 IST (75 continuous 5m bars: 09:15 to 15:25).
+            # CAS is shifted to 15:30:00–15:40:00 IST (10-minute window).
+            exp_times = [
+                f"{9 + (15 + i * 5) // 60:02d}:{(15 + i * 5) % 60:02d}:00"
+                for i in range(75)
+            ]
+            return {
+                "symbol": clean_sym,
+                "session_date": d_str,
+                "is_trading_day": True,
+                "status_reason": cas_reason,
+                "session_type": "REGULAR_CAS_REVISED",
+                "schedule_version": CASSymbolScheduleVersion.CAS_V2_REVISED.value,
+                "is_cas_eligible": True,
+                "continuous_start_time": "09:15:00",
+                "continuous_end_time": "15:30:00",
+                "last_continuous_bar_time": "15:25:00",
+                "expected_continuous_bars": 75,
+                "expected_continuous_timestamps": exp_times,
+                "has_closing_auction": True,
+                "auction_start_time": "15:30:00",
+                "auction_end_time": "15:40:00",
+                "acceptable_auction_timestamps": ["15:35:00", "15:40:00"],
+                "timestamp_convention": "BAR_START_TIME",
+                "circular_references": ["SEBI/HO/47/11/11(3)2025-MRD-POD2/I/23843/2026"],
+                "reference_price_window": "15:15:00-15:30:00 IST (15m continuous VWAP)",
+                "derivatives_settlement_window": "15:00:00-15:30:00 IST (30m continuous VWAP)",
+                "order_entry_window": "15:31:00-15:36:00 (Mkt+Limit), 15:36:00-15:38:00 (Limit only)",
+                "random_closure_window": "15:38:00-15:40:00 IST",
+                "order_matching_time": "15:40:00 IST",
+                "post_close_timing": "15:45:00-16:00:00 IST",
+            }
     else:
-        # Standard non-CAS schedule: continuous trading ends at 15:30:00 IST.
+        # Standard non-CAS or Pre-CAS schedule: continuous trading ends at 15:30:00 IST.
         # 75 bars start at 09:15:00 and the last continuous bar starts at 15:25:00 (ends at 15:30:00).
         exp_times = [
             f"{9 + (15 + i * 5) // 60:02d}:{(15 + i * 5) % 60:02d}:00"
             for i in range(75)
         ]
+        if clean_sym in NSE_FO_SECURITIES and d_str < CAS_V1_HISTORICAL_START:
+            sched_ver = CASSymbolScheduleVersion.PRE_CAS_STANDARD.value
+        else:
+            sched_ver = CASSymbolScheduleVersion.STANDARD_NON_CAS.value
+
         return {
             "symbol": clean_sym,
             "session_date": d_str,
             "is_trading_day": True,
             "status_reason": cas_reason if clean_sym else "STANDARD_SESSION_SCHEDULE",
             "session_type": "REGULAR_STANDARD",
+            "schedule_version": sched_ver,
             "is_cas_eligible": False,
             "continuous_start_time": "09:15:00",
             "continuous_end_time": "15:30:00",
+            "last_continuous_bar_time": "15:25:00",
             "expected_continuous_bars": 75,
             "expected_continuous_timestamps": exp_times,
             "has_closing_auction": False,
             "auction_start_time": None,
             "auction_end_time": None,
+            "acceptable_auction_timestamps": [],
+            "timestamp_convention": "BAR_START_TIME",
+            "circular_references": [],
+            "reference_price_window": "15:00:00-15:30:00 IST (Standard 30m VWAP)",
+            "derivatives_settlement_window": "15:00:00-15:30:00 IST (Standard 30m VWAP)",
             "acceptable_auction_timestamps": [],
             "timestamp_convention": "BAR_START_TIME",
             "circular_references": ["NSE/CMTR/59737"],
@@ -891,15 +978,14 @@ def get_session_expected_bars(
 
     if interval == "5m":
         if symbol:
-            is_cas, _ = is_cas_eligible_security(symbol, d_str)
-            if is_cas:
-                return CAS_CONTINUOUS_BARS_5M
+            sched = get_expected_session_schedule(symbol, d_str, interval="5m")
+            return sched.get("expected_continuous_bars", STANDARD_SESSION_BARS_5M)
         return STANDARD_SESSION_BARS_5M
     elif interval == "15m":
         if symbol:
-            is_cas, _ = is_cas_eligible_security(symbol, d_str)
-            if is_cas:
-                return 24
+            sched = get_expected_session_schedule(symbol, d_str, interval="5m")
+            exp_5m = sched.get("expected_continuous_bars", STANDARD_SESSION_BARS_5M)
+            return exp_5m // 3
         return 25
     elif interval == "60m":
         return 7

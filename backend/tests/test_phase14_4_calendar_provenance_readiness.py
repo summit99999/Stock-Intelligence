@@ -467,7 +467,9 @@ def test_session_completeness_special_session_muhurat():
 # 4. Provider Ingestion Readiness & Truthful Error Reporting
 # ---------------------------------------------------------------------------
 
-def test_provider_yfinance_network_failure_truthful_reporting(monkeypatch):
+def test_provider_yfinance_network_failure_truthful_reporting(
+    monkeypatch, prepared_current_instrument_database
+):
     """A mocked network failure is reported without making external requests."""
     import yfinance as yf
 
@@ -637,7 +639,7 @@ def test_database_strict_audit_isolates_db_synthetic():
     must return UNAVAILABLE because all 46,500 bars in database are synthetic.
     """
     res = calculate_historical_time_of_day_rvol(
-        symbol="INFY",
+        symbol="TATAMOTORS",
         today_cumulative_volume=500000,
         current_time_str="14:15:00",
         allow_synthetic=False,
@@ -667,7 +669,11 @@ def test_system_wide_demo_isolation_across_endpoints(client):
     assert resp_status.status_code == 200
     status_data = resp_status.json()
     assert status_data["total_synthetic_bars"] == 46500
-    assert status_data["total_observed_bars"] in (0, 2658)
+    with connect() as con:
+        persisted_observed_count = con.execute(
+            "SELECT COUNT(*) FROM observed_intraday_ohlcv WHERE interval = '5m'"
+        ).fetchone()[0]
+    assert status_data["total_observed_bars"] == persisted_observed_count
     assert status_data["production_status"] in ("SYNTHETIC_SIMULATION_ONLY", "PARTIAL_OBSERVED_DATA")
 
 

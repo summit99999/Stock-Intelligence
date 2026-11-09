@@ -18,7 +18,12 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).resolve().parents[1] / "data" / "stock_intelligence.db"
+DB_PATH = Path(
+    os.getenv(
+        "STOCK_INTELLIGENCE_DB_PATH",
+        str(Path(__file__).resolve().parents[1] / "data" / "stock_intelligence.db"),
+    )
+).resolve()
 
 # PostgreSQL / Supabase connection URL
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -130,6 +135,28 @@ TABLE_PK_MAP: Dict[str, Tuple[List[str], List[str]]] = {
         "source", "provider", "provider_symbol", "exchange", "retrieval_timestamp",
         "ingestion_run_id", "raw_response_hash", "provenance_classification",
         "data_quality_status"
+    ]),
+    "instruments": (["instrument_id"], [
+        "symbol", "company_name", "isin", "historical_isin", "effective_date", "exchange", "security_type",
+        "is_fo_eligible", "fo_effective_date", "is_cas_eligible", "cas_effective_date",
+        "cas_schedule_version", "historical_symbols", "listing_date", "delisting_date",
+        "status", "last_verified_date", "verification_source", "verification_provenance",
+        "created_at", "updated_at"
+    ]),
+    "instrument_provider_mappings": (["mapping_id"], [
+        "instrument_id", "provider", "provider_symbol", "provider_security_id",
+        "exchange_segment", "identity_status", "mapping_status", "is_primary",
+        "verification_date", "verification_method", "notes", "effective_from",
+        "effective_to", "quote_endpoint_verified", "daily_history_verified",
+        "intraday_history_verified", "live_feed_verified", "created_at", "updated_at"
+    ]),
+    "instrument_corporate_actions": (["action_id"], [
+        "instrument_id", "action_type", "ex_date", "date_verification_status",
+        "record_date", "ratio",
+        "pre_action_symbol", "post_action_symbol", "resulting_instrument_id",
+        "resulting_instrument_ids", "historical_adjustment_factor",
+        "adjustment_treatment", "description",
+        "circular_reference", "verified_at", "created_at"
     ]),
 }
 
@@ -536,6 +563,81 @@ CREATE TABLE IF NOT EXISTS observed_intraday_ohlcv (
     provenance_classification TEXT NOT NULL,
     data_quality_status TEXT NOT NULL,
     PRIMARY KEY (symbol, interval, timestamp)
+)
+"""
+
+INSTRUMENTS_DDL = """
+CREATE TABLE IF NOT EXISTS instruments (
+    instrument_id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    isin TEXT,
+    historical_isin TEXT,
+    effective_date TEXT,
+    exchange TEXT NOT NULL DEFAULT 'NSE',
+    security_type TEXT NOT NULL DEFAULT 'EQUITY',
+    is_fo_eligible INTEGER NOT NULL DEFAULT 0,
+    fo_effective_date TEXT,
+    is_cas_eligible INTEGER NOT NULL DEFAULT 0,
+    cas_effective_date TEXT,
+    cas_schedule_version TEXT DEFAULT 'CAS_V1_HISTORICAL',
+    historical_symbols TEXT,
+    listing_date TEXT,
+    delisting_date TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    last_verified_date TEXT NOT NULL,
+    verification_source TEXT NOT NULL,
+    verification_provenance TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+INSTRUMENT_PROVIDER_MAPPINGS_DDL = """
+CREATE TABLE IF NOT EXISTS instrument_provider_mappings (
+    mapping_id TEXT PRIMARY KEY,
+    instrument_id TEXT NOT NULL REFERENCES instruments(instrument_id),
+    provider TEXT NOT NULL,
+    provider_symbol TEXT NOT NULL,
+    provider_security_id TEXT,
+    exchange_segment TEXT DEFAULT 'NSE_EQ',
+    identity_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    mapping_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    is_primary INTEGER NOT NULL DEFAULT 1,
+    verification_date TEXT NOT NULL,
+    verification_method TEXT NOT NULL,
+    notes TEXT,
+    effective_from TEXT,
+    effective_to TEXT,
+    quote_endpoint_verified INTEGER NOT NULL DEFAULT 0,
+    daily_history_verified INTEGER NOT NULL DEFAULT 0,
+    intraday_history_verified INTEGER NOT NULL DEFAULT 0,
+    live_feed_verified INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(instrument_id, provider, exchange_segment)
+)
+"""
+
+INSTRUMENT_CORPORATE_ACTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS instrument_corporate_actions (
+    action_id TEXT PRIMARY KEY,
+    instrument_id TEXT NOT NULL REFERENCES instruments(instrument_id),
+    action_type TEXT NOT NULL,
+    ex_date TEXT NOT NULL,
+    date_verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    record_date TEXT,
+    ratio TEXT,
+    pre_action_symbol TEXT,
+    post_action_symbol TEXT,
+    resulting_instrument_id TEXT,
+    resulting_instrument_ids TEXT,
+    historical_adjustment_factor REAL DEFAULT 1.0,
+    adjustment_treatment TEXT NOT NULL DEFAULT 'UNADJUSTED',
+    description TEXT NOT NULL,
+    circular_reference TEXT,
+    verified_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
 )
 """
 
@@ -1087,6 +1189,43 @@ def _init_postgres_db():
             "CREATE INDEX IF NOT EXISTS idx_observed_intraday_run "
             "ON observed_intraday_ohlcv (ingestion_run_id)"
         )
+        con.execute(INSTRUMENTS_DDL)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_instruments_symbol ON instruments (symbol)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_instruments_isin ON instruments (isin)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_instruments_hist_isin ON instruments (historical_isin)")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_instruments_active_isin ON instruments (isin) WHERE status = 'ACTIVE' AND isin IS NOT NULL")
+        con.execute(INSTRUMENT_PROVIDER_MAPPINGS_DDL)
+        for column in (
+            "effective_from", "effective_to", "identity_status",
+            "quote_endpoint_verified", "daily_history_verified",
+            "intraday_history_verified", "live_feed_verified"
+        ):
+            try:
+                con.execute(f"SELECT {column} FROM instrument_provider_mappings LIMIT 1")
+            except sqlite3.OperationalError:
+                col_type = (
+                    "INTEGER DEFAULT 0" if "verified" in column
+                    else "TEXT DEFAULT 'UNVERIFIED'" if column == "identity_status"
+                    else "TEXT"
+                )
+                con.execute(f"ALTER TABLE instrument_provider_mappings ADD COLUMN {column} {col_type}")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_prov_map_inst_prov ON instrument_provider_mappings (instrument_id, provider)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_prov_map_sec_id ON instrument_provider_mappings (provider, provider_security_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_prov_map_prov_sym ON instrument_provider_mappings (provider, provider_symbol)")
+        con.execute(INSTRUMENT_CORPORATE_ACTIONS_DDL)
+        try:
+            con.execute("SELECT date_verification_status FROM instrument_corporate_actions LIMIT 1")
+        except sqlite3.OperationalError:
+            con.execute(
+                "ALTER TABLE instrument_corporate_actions ADD COLUMN "
+                "date_verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED'"
+            )
+        try:
+            con.execute("SELECT resulting_instrument_ids FROM instrument_corporate_actions LIMIT 1")
+        except sqlite3.OperationalError:
+            con.execute("ALTER TABLE instrument_corporate_actions ADD COLUMN resulting_instrument_ids TEXT")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_corp_act_inst ON instrument_corporate_actions (instrument_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_corp_act_ex_date ON instrument_corporate_actions (ex_date)")
 
         # Seed sample data ONLY when the stocks table is empty
         try:
@@ -1163,6 +1302,43 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_observed_intraday_run "
             "ON observed_intraday_ohlcv (ingestion_run_id)"
         )
+        con.execute(INSTRUMENTS_DDL)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_instruments_symbol ON instruments (symbol)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_instruments_isin ON instruments (isin)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_instruments_hist_isin ON instruments (historical_isin)")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_instruments_active_isin ON instruments (isin) WHERE status = 'ACTIVE' AND isin IS NOT NULL")
+        con.execute(INSTRUMENT_PROVIDER_MAPPINGS_DDL)
+        for column in (
+            "effective_from", "effective_to", "identity_status",
+            "quote_endpoint_verified", "daily_history_verified",
+            "intraday_history_verified", "live_feed_verified"
+        ):
+            try:
+                con.execute(f"SELECT {column} FROM instrument_provider_mappings LIMIT 1")
+            except sqlite3.OperationalError:
+                col_type = (
+                    "INTEGER DEFAULT 0" if "verified" in column
+                    else "TEXT DEFAULT 'UNVERIFIED'" if column == "identity_status"
+                    else "TEXT"
+                )
+                con.execute(f"ALTER TABLE instrument_provider_mappings ADD COLUMN {column} {col_type}")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_prov_map_inst_prov ON instrument_provider_mappings (instrument_id, provider)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_prov_map_prov_sym ON instrument_provider_mappings (provider, provider_symbol)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_prov_map_sec_id ON instrument_provider_mappings (provider, provider_security_id)")
+        con.execute(INSTRUMENT_CORPORATE_ACTIONS_DDL)
+        try:
+            con.execute("SELECT date_verification_status FROM instrument_corporate_actions LIMIT 1")
+        except sqlite3.OperationalError:
+            con.execute(
+                "ALTER TABLE instrument_corporate_actions ADD COLUMN "
+                "date_verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED'"
+            )
+        try:
+            con.execute("SELECT resulting_instrument_ids FROM instrument_corporate_actions LIMIT 1")
+        except sqlite3.OperationalError:
+            con.execute("ALTER TABLE instrument_corporate_actions ADD COLUMN resulting_instrument_ids TEXT")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_corp_act_inst ON instrument_corporate_actions (instrument_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_corp_act_ex_date ON instrument_corporate_actions (ex_date)")
 
         # Add adj_close column if upgrading from old schema
         try:
@@ -2336,3 +2512,201 @@ def delete_research_note(note_id: int, user_id: Optional[str] = None) -> bool:
         cur = con.execute(sql, all_params)
         con.commit()
         return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Authoritative Instrument Master & Corporate Action Layer (Phase 14.9)
+# ---------------------------------------------------------------------------
+
+def get_instrument(identifier: str) -> Optional[dict]:
+    """
+    Look up an instrument by its internal instrument_id, ISIN, or current/historical NSE symbol.
+    """
+    if not identifier:
+        return None
+    raw = identifier.strip().upper()
+    with connect() as con:
+        # 1. Exact match on instrument_id
+        row = con.execute("SELECT * FROM instruments WHERE UPPER(instrument_id) = ?", (raw,)).fetchone()
+        if row:
+            return dict(row)
+        # 2. Exact match on ISIN
+        row = con.execute("SELECT * FROM instruments WHERE UPPER(isin) = ?", (raw,)).fetchone()
+        if row:
+            return dict(row)
+        # 3. Exact match on historical_isin
+        row = con.execute("SELECT * FROM instruments WHERE UPPER(historical_isin) = ?", (raw,)).fetchone()
+        if row:
+            return dict(row)
+        # 4. Exact match on current trading symbol
+        row = con.execute("SELECT * FROM instruments WHERE UPPER(symbol) = ?", (raw,)).fetchone()
+        if row:
+            return dict(row)
+        # 4. Search in historical symbols JSON
+        rows = con.execute("SELECT * FROM instruments WHERE historical_symbols LIKE ?", (f'%"{raw}"%',)).fetchall()
+        if rows:
+            return dict(rows[0])
+    return None
+
+
+def get_instruments(active_only: bool = False) -> list[dict]:
+    """Retrieve all instruments from the instrument master."""
+    sql = "SELECT * FROM instruments"
+    params = []
+    if active_only:
+        sql += " WHERE status = 'ACTIVE'"
+    sql += " ORDER BY symbol ASC"
+    with connect() as con:
+        rows = con.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def upsert_instrument(inst: dict) -> bool:
+    """Insert or update an instrument record in the instrument master."""
+    fields = [
+        "instrument_id", "symbol", "company_name", "isin", "historical_isin",
+        "effective_date", "exchange",
+        "security_type", "is_fo_eligible", "fo_effective_date", "is_cas_eligible",
+        "cas_effective_date", "cas_schedule_version", "historical_symbols",
+        "listing_date", "delisting_date", "status", "last_verified_date",
+        "verification_source", "verification_provenance", "created_at", "updated_at"
+    ]
+    vals = [inst.get(f) for f in fields]
+    sql = f"""
+    INSERT INTO instruments ({", ".join(fields)})
+    VALUES ({", ".join("?" for _ in fields)})
+    ON CONFLICT(instrument_id) DO UPDATE SET
+        symbol = excluded.symbol,
+        company_name = excluded.company_name,
+        isin = excluded.isin,
+        historical_isin = excluded.historical_isin,
+        effective_date = excluded.effective_date,
+        exchange = excluded.exchange,
+        security_type = excluded.security_type,
+        is_fo_eligible = excluded.is_fo_eligible,
+        fo_effective_date = excluded.fo_effective_date,
+        is_cas_eligible = excluded.is_cas_eligible,
+        cas_effective_date = excluded.cas_effective_date,
+        cas_schedule_version = excluded.cas_schedule_version,
+        historical_symbols = excluded.historical_symbols,
+        listing_date = excluded.listing_date,
+        delisting_date = excluded.delisting_date,
+        status = excluded.status,
+        last_verified_date = excluded.last_verified_date,
+        verification_source = excluded.verification_source,
+        verification_provenance = excluded.verification_provenance,
+        updated_at = excluded.updated_at
+    """
+    with connect() as con:
+        con.execute(sql, vals)
+        con.commit()
+    return True
+
+
+def get_provider_mappings(
+    instrument_id: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> list[dict]:
+    """Retrieve provider mappings filtered by instrument_id and/or provider."""
+    clauses = []
+    params = []
+    if instrument_id:
+        clauses.append("instrument_id = ?")
+        params.append(instrument_id)
+    if provider:
+        clauses.append("provider = ?")
+        params.append(provider.lower())
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"SELECT * FROM instrument_provider_mappings{where} ORDER BY instrument_id, provider"
+    with connect() as con:
+        rows = con.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def upsert_provider_mapping(mapping: dict) -> bool:
+    """Insert or update a provider mapping record."""
+    fields = [
+        "mapping_id", "instrument_id", "provider", "provider_symbol",
+        "provider_security_id", "exchange_segment", "identity_status", "mapping_status",
+        "is_primary", "verification_date", "verification_method", "notes",
+        "effective_from", "effective_to",
+        "quote_endpoint_verified", "daily_history_verified",
+        "intraday_history_verified", "live_feed_verified",
+        "created_at", "updated_at"
+    ]
+    vals = [mapping.get(f) for f in fields]
+    sql = f"""
+    INSERT INTO instrument_provider_mappings ({", ".join(fields)})
+    VALUES ({", ".join("?" for _ in fields)})
+    ON CONFLICT(mapping_id) DO UPDATE SET
+        provider_symbol = excluded.provider_symbol,
+        provider_security_id = excluded.provider_security_id,
+        exchange_segment = excluded.exchange_segment,
+        identity_status = excluded.identity_status,
+        mapping_status = excluded.mapping_status,
+        is_primary = excluded.is_primary,
+        verification_date = excluded.verification_date,
+        instrument_id = excluded.instrument_id,
+        verification_method = excluded.verification_method,
+        notes = excluded.notes,
+        effective_from = excluded.effective_from,
+        effective_to = excluded.effective_to,
+        quote_endpoint_verified = excluded.quote_endpoint_verified,
+        daily_history_verified = excluded.daily_history_verified,
+        intraday_history_verified = excluded.intraday_history_verified,
+        live_feed_verified = excluded.live_feed_verified,
+        updated_at = excluded.updated_at
+    """
+    with connect() as con:
+        con.execute(sql, vals)
+        con.commit()
+    return True
+
+
+def get_corporate_actions(instrument_id: Optional[str] = None) -> list[dict]:
+    """Retrieve corporate actions, optionally for a specific instrument."""
+    sql = "SELECT * FROM instrument_corporate_actions"
+    params = []
+    if instrument_id:
+        sql += " WHERE instrument_id = ?"
+        params.append(instrument_id)
+    sql += " ORDER BY ex_date DESC"
+    with connect() as con:
+        rows = con.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def upsert_corporate_action(action: dict) -> bool:
+    """Insert or update an instrument corporate action record."""
+    fields = [
+        "action_id", "instrument_id", "action_type", "ex_date", "record_date",
+        "date_verification_status",
+        "ratio", "pre_action_symbol", "post_action_symbol", "resulting_instrument_id",
+        "resulting_instrument_ids",
+        "historical_adjustment_factor", "adjustment_treatment", "description",
+        "circular_reference", "verified_at", "created_at"
+    ]
+    vals = [action.get(f) for f in fields]
+    sql = f"""
+    INSERT INTO instrument_corporate_actions ({", ".join(fields)})
+    VALUES ({", ".join("?" for _ in fields)})
+    ON CONFLICT(action_id) DO UPDATE SET
+        action_type = excluded.action_type,
+        ex_date = excluded.ex_date,
+        date_verification_status = excluded.date_verification_status,
+        record_date = excluded.record_date,
+        ratio = excluded.ratio,
+        pre_action_symbol = excluded.pre_action_symbol,
+        post_action_symbol = excluded.post_action_symbol,
+        resulting_instrument_id = excluded.resulting_instrument_id,
+        resulting_instrument_ids = excluded.resulting_instrument_ids,
+        historical_adjustment_factor = excluded.historical_adjustment_factor,
+        adjustment_treatment = excluded.adjustment_treatment,
+        description = excluded.description,
+        circular_reference = excluded.circular_reference,
+        verified_at = excluded.verified_at
+    """
+    with connect() as con:
+        con.execute(sql, vals)
+        con.commit()
+    return True

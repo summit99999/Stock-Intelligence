@@ -1,0 +1,44 @@
+# ==============================================================================
+# Stock Intelligence Pro — Local & Production Docker Compose Stack
+# Launches complete personal equity intelligence stack with a single command:
+#   docker compose up -d
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stock-intelligence-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8000
+      - FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173,http://localhost:80,http://localhost:3000
+      - DHAN_LIVE_DATA_ENABLED=false
+    volumes:
+      - ./backend/data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stock-intelligence-web
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
