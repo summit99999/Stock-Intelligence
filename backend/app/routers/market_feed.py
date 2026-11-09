@@ -1,4 +1,4 @@
-"""Market Feed API router — live quotes, live feed status, and WebSocket streaming."""
+"""Market Feed API router — live quotes, live feed status, and WebSocket streaming via Upstox."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from app.schemas.dhan_market import (
+from app.schemas.upstox_market import (
     LiveFeedStatus,
     LiveQuote,
     LiveQuotesResponse,
     SubscribeRequest,
 )
-from app.services.dhan_market_service import get_dhan_market_service
-from app.services.dhan_ws_client import get_dhan_ws_client
+from app.services.upstox_market_service import get_upstox_market_service
+from app.services.upstox_ws_client import get_upstox_ws_client
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,8 @@ router = APIRouter(prefix="", tags=["live-market-feed"])
 
 @router.get("/api/market/live/status", response_model=LiveFeedStatus)
 def get_live_feed_status():
-    """Return status and diagnostics for the Dhan live market feed."""
-    client = get_dhan_ws_client()
+    """Return status and diagnostics for the Upstox live market feed."""
+    client = get_upstox_ws_client()
     return client.get_feed_status()
 
 
@@ -34,7 +34,7 @@ async def get_live_quotes(symbols: Optional[str] = None):
     Return current live quotes snapshot for subscribed or requested symbols.
     symbols: optional comma-separated list of symbols (e.g. RELIANCE,TCS,NIFTY 50).
     """
-    market_svc = get_dhan_market_service()
+    market_svc = get_upstox_market_service()
     sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols else None
 
     # First check if quotes are in cache
@@ -64,7 +64,7 @@ async def get_live_quotes(symbols: Optional[str] = None):
 @router.get("/api/market/live/quote/{symbol}", response_model=LiveQuote)
 async def get_live_quote_single(symbol: str):
     """Return current live quote for a single symbol or index."""
-    market_svc = get_dhan_market_service()
+    market_svc = get_upstox_market_service()
     sym = symbol.strip().upper()
 
     cached = market_svc.get_cached_quote(sym)
@@ -84,7 +84,7 @@ async def get_live_quote_single(symbol: str):
 @router.post("/api/market/live/subscribe", response_model=LiveFeedStatus)
 async def subscribe_symbols(req: SubscribeRequest):
     """Subscribe to additional symbols on the live feed."""
-    client = get_dhan_ws_client()
+    client = get_upstox_ws_client()
     await client.subscribe(req.symbols)
     return client.get_feed_status()
 
@@ -92,18 +92,17 @@ async def subscribe_symbols(req: SubscribeRequest):
 @router.post("/api/market/live/reconnect", response_model=LiveFeedStatus)
 async def reconnect_live_feed(force: bool = True, enable: bool = False):
     """
-    Manually trigger reconnection to the Dhan live market feed.
-    Can be used after resolving rate limiting (HTTP 429), subscribing to Dhan Data API,
-    or enabling live data mode.
+    Manually trigger reconnection to the Upstox live market feed.
+    Can be used after updating access tokens or enabling live data mode.
     """
-    client = get_dhan_ws_client()
+    client = get_upstox_ws_client()
     return await client.manual_reconnect(force=force, enable=enable)
 
 
 @router.post("/api/market/live/refresh", response_model=LiveQuotesResponse)
 async def refresh_quotes():
-    """Trigger an immediate REST snapshot refresh from Dhan."""
-    market_svc = get_dhan_market_service()
+    """Trigger an immediate REST snapshot refresh from Upstox."""
+    market_svc = get_upstox_market_service()
     quotes = await market_svc.fetch_quotes()
     predominant = "LIVE" if all(q.source == "LIVE" for q in quotes.values()) else "DEMO"
     return LiveQuotesResponse(
@@ -122,7 +121,7 @@ async def websocket_market_feed(websocket: WebSocket):
     Frontend clients connect to ws://{host}:{port}/ws/market-feed.
     """
     await websocket.accept()
-    ws_client = get_dhan_ws_client()
+    ws_client = get_upstox_ws_client()
     await ws_client.register_frontend_client(websocket)
 
     try:

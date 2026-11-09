@@ -26,5 +26,13 @@ services:
         sync: false
       - key: FRONTEND_ORIGIN
         sync: false
-      - key: DHAN_LIVE_DATA_ENABLED
+      - key: UPSTOX_API_KEY
+        sync: false
+      - key: UPSTOX_API_SECRET
+        sync: false
+      - key: UPSTOX_REDIRECT_URI
+        sync: false
+      - key: UPSTOX_ACCESS_TOKEN
+        sync: false
+      - key: UPSTOX_LIVE_DATA_ENABLED
         value: "false"

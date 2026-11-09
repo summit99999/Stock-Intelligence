@@ -323,7 +323,7 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <span style={{ color: "#64748b" }}>
-              Broker Stream: <span style={{ color: "#e2e8f0" }}>Dhan Inactive (Zero-Cost Research)</span>
+              Broker Stream: <span style={{ color: "#e2e8f0" }}>Upstox (Official Feed) / Zero-Cost Mode</span>
             </span>
             <span>Last Updated: {dashboard.metadata.last_update_timestamp}</span>
           </div>

@@ -132,15 +132,15 @@ def get_provider_manager() -> ProviderManager:
         _manager = ProviderManager()
         pref = os.getenv("MARKET_DATA_PROVIDER", "yfinance").strip().lower()
 
-        if pref == "dhan":
-            # Prefer Dhan, fallback to YFinance
+        if pref == "upstox":
+            # Prefer Upstox, fallback to YFinance
             try:
-                from app.providers.dhan_provider import DhanProvider
-                dp = DhanProvider()
-                if dp.is_available():
-                    _manager.register(dp)
+                from app.providers.upstox_provider import UpstoxProvider
+                up = UpstoxProvider()
+                if up.is_available():
+                    _manager.register(up)
             except Exception as e:
-                logger.warning("Could not register Dhan provider: %s", e)
+                logger.warning("Could not register Upstox provider: %s", e)
 
             try:
                 from app.providers.yfinance_provider import YFinanceProvider
@@ -150,7 +150,7 @@ def get_provider_manager() -> ProviderManager:
             except Exception as e:
                 logger.warning("Could not register YFinance fallback provider: %s", e)
         else:
-            # Default: Prefer YFinance, fallback to Dhan
+            # Default: Prefer YFinance, fallback to Upstox
             try:
                 from app.providers.yfinance_provider import YFinanceProvider
                 yf = YFinanceProvider()
@@ -160,11 +160,11 @@ def get_provider_manager() -> ProviderManager:
                 logger.warning("Could not register YFinance provider: %s", e)
 
             try:
-                from app.providers.dhan_provider import DhanProvider
-                dp = DhanProvider()
-                if dp.is_available():
-                    _manager.register(dp)
+                from app.providers.upstox_provider import UpstoxProvider
+                up = UpstoxProvider()
+                if up.is_available():
+                    _manager.register(up)
             except Exception as e:
-                logger.warning("Could not register Dhan provider: %s", e)
+                logger.warning("Could not register Upstox provider: %s", e)
 
     return _manager

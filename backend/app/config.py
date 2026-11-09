@@ -42,15 +42,20 @@ class DhanConfig:
 
 @dataclass(frozen=True)
 class UpstoxConfig:
-    """Upstox Fundamentals API credentials — read-only, never serialised."""
+    """Upstox API credentials — read-only, never serialised to responses."""
 
-    access_token: str = ""
-    api_base_url: str = "https://api.upstox.com"
+    api_key: str = ""           # Upstox App / Client Key
+    api_secret: str = ""        # Upstox App Secret
+    redirect_uri: str = "http://127.0.0.1:8000/api/upstox/oauth/callback"
+    access_token: str = ""      # Direct bearer token or OAuth exchanged token
+    api_base_url: str = "https://api.upstox.com/v2"
+    live_data_enabled: bool = False
+    sandbox_mode: bool = False
 
     @property
     def is_configured(self) -> bool:
-        """True when the access token is present."""
-        return bool(self.access_token)
+        """True when either an access token or required OAuth credentials are present."""
+        return bool(self.access_token or (self.api_key and self.api_secret))
 
 
 def get_dhan_config() -> DhanConfig:
@@ -133,18 +138,60 @@ def get_dhan_credential_diagnostics() -> dict[str, bool]:
 
 
 def get_upstox_config() -> UpstoxConfig:
-    """Build UpstoxConfig from environment variables.  Never logs values."""
+    """Build UpstoxConfig from environment variables and backend/.env. Never logs values."""
+    api_key = os.getenv("UPSTOX_API_KEY", "").strip()
+    api_secret = os.getenv("UPSTOX_API_SECRET", "").strip()
+    redirect_uri = os.getenv(
+        "UPSTOX_REDIRECT_URI", "http://127.0.0.1:8000/api/upstox/oauth/callback"
+    ).strip()
     access_token = os.getenv("UPSTOX_ACCESS_TOKEN", "").strip()
-    api_base_url = os.getenv("UPSTOX_API_BASE_URL", "https://api.upstox.com").strip()
+    api_base_url = os.getenv("UPSTOX_API_BASE_URL", "https://api.upstox.com/v2").strip()
 
-    if not access_token and _ENV_PATH.exists():
+    raw_live_enabled = os.getenv("UPSTOX_LIVE_DATA_ENABLED")
+    if raw_live_enabled is None and _ENV_PATH.exists():
         try:
             file_values = dotenv_values(_ENV_PATH)
+            raw_live_enabled = file_values.get("UPSTOX_LIVE_DATA_ENABLED")
+        except Exception:
+            pass
+
+    live_data_enabled = False
+    if raw_live_enabled is not None:
+        live_data_enabled = str(raw_live_enabled).strip().lower() in ("1", "true", "yes", "on", "t")
+
+    raw_sandbox = os.getenv("UPSTOX_SANDBOX_MODE")
+    sandbox_mode = False
+    if raw_sandbox is not None:
+        sandbox_mode = str(raw_sandbox).strip().lower() in ("1", "true", "yes", "on", "t")
+
+    if (not access_token or not api_key) and _ENV_PATH.exists():
+        try:
+            file_values = dotenv_values(_ENV_PATH)
+            api_key = api_key or str(file_values.get("UPSTOX_API_KEY") or "").strip()
+            api_secret = api_secret or str(file_values.get("UPSTOX_API_SECRET") or "").strip()
+            redirect_uri = redirect_uri or str(file_values.get("UPSTOX_REDIRECT_URI") or "").strip()
             access_token = access_token or str(file_values.get("UPSTOX_ACCESS_TOKEN") or "").strip()
+            api_base_url = api_base_url or str(file_values.get("UPSTOX_API_BASE_URL") or "https://api.upstox.com/v2").strip()
         except Exception:
             pass
 
     return UpstoxConfig(
+        api_key=api_key,
+        api_secret=api_secret,
+        redirect_uri=redirect_uri,
         access_token=access_token,
         api_base_url=api_base_url,
+        live_data_enabled=live_data_enabled,
+        sandbox_mode=sandbox_mode,
     )
+
+
+def get_upstox_credential_diagnostics() -> dict[str, bool]:
+    """Safe credential-presence diagnostic for Upstox."""
+    cfg = get_upstox_config()
+    return {
+        "UPSTOX_API_KEY": bool(cfg.api_key),
+        "UPSTOX_API_SECRET": bool(cfg.api_secret),
+        "UPSTOX_ACCESS_TOKEN": bool(cfg.access_token),
+        "UPSTOX_LIVE_DATA_ENABLED": bool(cfg.live_data_enabled),
+    }

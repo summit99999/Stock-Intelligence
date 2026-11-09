@@ -1,5 +1,5 @@
 /**
- * Dhan Live Market Feed Client (REST snapshot & WebSocket streaming)
+ * Upstox Live Market Feed Client (REST snapshot & WebSocket streaming)
  */
 
 export interface LiveQuote {

@@ -370,7 +370,7 @@ function App() {
             <div>
               <strong>
                 {isLiveConnected
-                  ? "DhanHQ Live Feed"
+                  ? "Upstox Live Feed"
                   : isRateLimited
                   ? "Rate Limited (HTTP 429)"
                   : isDisabled
@@ -383,7 +383,7 @@ function App() {
                   : isRateLimited
                   ? "Data API inactive / Cooldown"
                   : isDisabled
-                  ? "DHAN_LIVE_DATA_ENABLED=false"
+                  ? "UPSTOX_LIVE_DATA_ENABLED=false"
                   : "Historical & offline fallback"}
               </small>
             </div>
@@ -431,7 +431,7 @@ function App() {
                   }
                 }}
                 disabled={isRefreshing}
-                title="Manually retry Dhan WebSocket connection"
+                title="Manually retry Upstox WebSocket connection"
                 style={{ borderColor: isRateLimited ? "#ef6676" : "#4a5568", color: isRateLimited ? "#ef6676" : "#a0aec0" }}
               >
                 {isRefreshing ? "Connecting..." : "⚡ Reconnect Feed"}
@@ -468,7 +468,7 @@ function App() {
                 }`}
               />
               {isLiveConnected
-                ? "LIVE FEED (DHAN)"
+                ? "LIVE FEED (UPSTOX)"
                 : isRateLimited
                 ? "RATE LIMITED"
                 : isDisabled
@@ -766,7 +766,7 @@ function App() {
               <span>STOCK INTELLIGENCE PRO</span>
               <span>
                 {isLiveConnected
-                  ? "Connected to Dhan Live Market Feed (v2)"
+                  ? "Connected to Upstox Live Market Feed (v2)"
                   : "yfinance historical engine · Zero-cost research mode"}
               </span>
             </footer>

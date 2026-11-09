@@ -19,7 +19,7 @@ services:
       - ENVIRONMENT=production
       - PORT=8000
       - FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173,http://localhost:80,http://localhost:3000
-      - DHAN_LIVE_DATA_ENABLED=false
+      - UPSTOX_LIVE_DATA_ENABLED=false
     volumes:
       - ./backend/data:/app/data
     healthcheck:

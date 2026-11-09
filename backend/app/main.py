@@ -15,11 +15,10 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import get_auth_mode, get_current_user, is_auth_enabled
-from app.config import get_dhan_config
+from app.config import get_upstox_config
 from app.database import get_database_mode, init_db
 from app.routers import (
     ai_planner,
-    dhan_auth,
     fundamentals,
     instruments,
     market_data,
@@ -32,9 +31,10 @@ from app.routers import (
     smc,
     stocks,
     unified_research,
+    upstox_auth,
     volume_analytics,
 )
-from app.services.dhan_ws_client import get_dhan_ws_client
+from app.services.upstox_ws_client import get_upstox_ws_client
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +45,18 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database (mode: %s)...", get_database_mode())
     init_db()
 
-    # Start Dhan live market feed background task only if enabled in config
-    dhan_cfg = get_dhan_config()
-    if dhan_cfg.live_data_enabled:
-        get_dhan_ws_client().start()
+    # Start Upstox live market feed background task only if enabled in config
+    upstox_cfg = get_upstox_config()
+    if upstox_cfg.live_data_enabled:
+        get_upstox_ws_client().start()
     else:
         # Client stays in DISABLED status; no connection or reconnection loop is started
-        get_dhan_ws_client().set_disabled()
+        get_upstox_ws_client().set_disabled()
 
     yield
 
-    logger.info("Stopping Dhan websocket client...")
-    await get_dhan_ws_client().stop()
+    logger.info("Stopping Upstox websocket client...")
+    await get_upstox_ws_client().stop()
 
 
 app = FastAPI(
@@ -135,7 +135,7 @@ def auth_status(current_user: Dict[str, Any] = Depends(get_current_user)):
 app.include_router(stocks.router)
 app.include_router(screener.router)
 app.include_router(market_data.router)
-app.include_router(dhan_auth.router)
+app.include_router(upstox_auth.router)
 app.include_router(fundamentals.router)
 app.include_router(market_feed.router)
 app.include_router(volume_analytics.router)

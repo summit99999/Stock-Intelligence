@@ -17,7 +17,10 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "StockIntelligence_DhanHQ"
+SERVICE_NAME_UPSTOX = "StockIntelligence_Upstox"
 USERNAME_TOKEN = "access_token"
+
+_MEMORY_TOKEN_CACHE: dict[str, StoredToken] = {}
 
 
 @dataclass
@@ -27,6 +30,8 @@ class StoredToken:
     access_token: str
     dhan_client_id: str = ""
     dhan_client_name: str = ""
+    user_id: str = ""
+    user_name: str = ""
     expires_at: str = ""         # ISO-8601
     stored_at: str = ""          # ISO-8601
 
@@ -35,9 +40,16 @@ class StoredToken:
         """
         Check if token is expired using standardized timezone-aware UTC comparison.
 
-        Returns True if expires_at is empty, invalid, or current UTC time >= expiry.
+        If expires_at is empty, treats token as valid for 24h from stored_at (or valid if stored_at missing).
         Returns False if expiry is valid and in the future.
         """
+        if not self.expires_at:
+            if self.stored_at:
+                st = parse_expiry_datetime(self.stored_at)
+                if st:
+                    from datetime import timedelta
+                    return datetime.now(timezone.utc) >= (st + timedelta(hours=24))
+            return False
         dt = parse_expiry_datetime(self.expires_at)
         if dt is None:
             return True
@@ -208,3 +220,99 @@ def get_backend_info() -> dict:
         }
     except Exception:
         return {"backend": "unavailable", "available": False}
+
+
+def store_upstox_token(
+    access_token: str,
+    user_id: str = "",
+    user_name: str = "",
+    expires_at: str = "",
+) -> bool:
+    """Store the Upstox access token securely via Keyring or memory cache."""
+    now_dt = datetime.now(timezone.utc)
+    if not expires_at:
+        from datetime import timedelta
+        expires_at = (now_dt + timedelta(hours=24)).isoformat()
+
+    stored_token = StoredToken(
+        access_token=access_token,
+        user_id=user_id,
+        user_name=user_name,
+        expires_at=expires_at,
+        stored_at=now_dt.isoformat(),
+    )
+    _MEMORY_TOKEN_CACHE["upstox"] = stored_token
+
+    if not _keyring_available():
+        logger.info("Keyring unavailable; stored Upstox token in secure memory cache.")
+        return True
+
+    try:
+        import keyring  # noqa: F811
+        payload = json.dumps({
+            "access_token": access_token,
+            "user_id": user_id,
+            "user_name": user_name,
+            "expires_at": expires_at,
+            "stored_at": stored_token.stored_at,
+        })
+        keyring.set_password(SERVICE_NAME_UPSTOX, USERNAME_TOKEN, payload)
+        logger.info("Upstox access token stored securely via keyring.")
+        return True
+    except Exception:
+        logger.warning("Could not persist Upstox token to keyring; retaining in secure memory.")
+        return True
+
+
+def get_upstox_token() -> Optional[StoredToken]:
+    """Retrieve the stored Upstox access token."""
+    # 1. First check in-memory cache
+    if "upstox" in _MEMORY_TOKEN_CACHE and not _MEMORY_TOKEN_CACHE["upstox"].is_expired:
+        return _MEMORY_TOKEN_CACHE["upstox"]
+
+    # 2. Check keyring
+    if _keyring_available():
+        try:
+            import keyring  # noqa: F811
+            raw = keyring.get_password(SERVICE_NAME_UPSTOX, USERNAME_TOKEN)
+            if raw:
+                data = json.loads(raw)
+                token = StoredToken(**data)
+                if not token.is_expired:
+                    _MEMORY_TOKEN_CACHE["upstox"] = token
+                    return token
+        except Exception:
+            pass
+
+    # 3. Check environment / config fallback
+    from app.config import get_upstox_config
+    cfg = get_upstox_config()
+    if cfg.access_token:
+        # Default expiry: 24h from now if not specified
+        token = StoredToken(
+            access_token=cfg.access_token,
+            user_id="UPSTOX_USER",
+            user_name="Upstox Trader",
+            expires_at="",
+            stored_at=datetime.now(timezone.utc).isoformat(),
+        )
+        _MEMORY_TOKEN_CACHE["upstox"] = token
+        return token
+
+    return None
+
+
+def delete_upstox_token() -> bool:
+    """Remove the stored Upstox token."""
+    _MEMORY_TOKEN_CACHE.pop("upstox", None)
+    if not _keyring_available():
+        return True
+
+    try:
+        import keyring  # noqa: F811
+        keyring.delete_password(SERVICE_NAME_UPSTOX, USERNAME_TOKEN)
+        logger.info("Upstox access token removed from keyring.")
+        return True
+    except Exception:
+        return True
+
