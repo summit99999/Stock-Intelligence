@@ -132,6 +132,13 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
 
       if (!dashRes.ok) throw new Error(`Market overview API returned HTTP ${dashRes.status}.`);
       if (!secRes.ok) throw new Error(`Sector intelligence API returned HTTP ${secRes.status}.`);
+
+      const dashType = dashRes.headers.get("content-type") || "";
+      const secType = secRes.headers.get("content-type") || "";
+      if (!dashType.includes("application/json") || !secType.includes("application/json")) {
+        throw new Error("Backend server is starting up. Please wait 10 seconds and refresh.");
+      }
+
       const [d, s] = await Promise.all([dashRes.json(), secRes.json()]);
       setDashboard(d);
       setSectors(s.sectors || []);

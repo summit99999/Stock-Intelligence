@@ -39,6 +39,16 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
  */
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await apiFetch(path, init);
+  const contentType = response.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+    if (text.includes("<!doctype") || text.includes("<html")) {
+      throw new Error("Backend server is warming up. Please wait 10-15 seconds and refresh.");
+    }
+    throw new Error(`Non-JSON response from server (HTTP ${response.status}): ${text.slice(0, 80)}`);
+  }
+
   if (!response.ok) {
     let errDetail = `HTTP ${response.status} (${response.statusText})`;
     try {
