@@ -24,7 +24,8 @@ from app.services.upstox_market_service import get_upstox_market_service
 
 logger = logging.getLogger(__name__)
 
-UPSTOX_WS_AUTH_URL = "https://api.upstox.com/v2/feed/market-data-feed/authorize"
+UPSTOX_WS_AUTH_URL_V3 = "https://api.upstox.com/v3/feed/market-data-feed/authorize"
+UPSTOX_WS_AUTH_URL_V2 = "https://api.upstox.com/v2/feed/market-data-feed/authorize"
 DEFAULT_SUBSCRIPTIONS = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "NIFTY 50"]
 
 
@@ -69,7 +70,7 @@ class UpstoxWebSocketClient:
         stored = get_upstox_token()
         has_auth = bool(stored and stored.access_token and not stored.is_expired)
         cfg = get_upstox_config()
-        is_enabled = bool(cfg.live_data_enabled or self._force_enabled)
+        is_enabled = bool(cfg.live_data_enabled or self._force_enabled or has_auth)
 
         effective_status = self._status
         if not is_enabled:
@@ -92,12 +93,12 @@ class UpstoxWebSocketClient:
 
     async def manual_reconnect(self, force: bool = True, enable: bool = False) -> LiveFeedStatus:
         """Manually trigger reconnection to the Upstox live feed."""
-        if enable:
+        if force or enable:
             self._force_enabled = True
         self._last_error = None
         self._retry_in_seconds = None
         await self.stop()
-        self.start(force=force or enable)
+        self.start(force=True)
         return self.get_feed_status()
 
     def start(self, force: bool = False):
@@ -105,17 +106,16 @@ class UpstoxWebSocketClient:
         if force:
             self._force_enabled = True
 
-        cfg = get_upstox_config()
-        if not cfg.live_data_enabled and not self._force_enabled:
-            self._status = "DISABLED"
-            logger.info("Upstox WebSocket client not started: UPSTOX_LIVE_DATA_ENABLED is false")
-            return
-
         stored = get_upstox_token()
         if not stored or not stored.access_token or stored.is_expired:
             self._status = "AUTHENTICATION_REQUIRED"
             logger.info("Upstox WebSocket client waiting: Authentication token required")
             return
+
+        cfg = get_upstox_config()
+        if not cfg.live_data_enabled and not self._force_enabled:
+            # If valid token exists, auto-enable feed
+            self._force_enabled = True
 
         if self._running or (self._task and not self._task.done()):
             return
@@ -206,7 +206,7 @@ class UpstoxWebSocketClient:
             payload = {
                 "guid": "stock_intelligence_sub",
                 "method": "sub",
-                "params": {
+                "data": {
                     "mode": "full",
                     "instrumentKeys": new_keys,
                 },
@@ -233,6 +233,10 @@ class UpstoxWebSocketClient:
                 ws_url = await self._get_authorized_ws_url(stored.access_token)
                 if not ws_url:
                     self._status = "DISCONNECTED"
+                    await self.broadcast_to_clients({
+                        "type": "STATUS_UPDATE",
+                        "feed_status": self.get_feed_status().model_dump(),
+                    })
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 1.5, 30.0)
                     continue
@@ -279,19 +283,35 @@ class UpstoxWebSocketClient:
         })
 
     async def _get_authorized_ws_url(self, token: str) -> Optional[str]:
-        """Fetch the authenticated WebSocket endpoint from Upstox."""
+        """Fetch the authenticated WebSocket endpoint from Upstox (v3 then v2 fallback)."""
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {token}",
         }
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.get(UPSTOX_WS_AUTH_URL, headers=headers)
-                if res.status_code == 200:
-                    data = res.json().get("data", {})
-                    return data.get("authorizedRedirectUri")
-        except Exception as e:
-            logger.warning("Failed to authorize Upstox WebSocket: %s", e)
+        endpoints = [
+            UPSTOX_WS_AUTH_URL_V3,
+            UPSTOX_WS_AUTH_URL_V2,
+        ]
+        last_error_text = ""
+        for url in endpoints:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    res = await client.get(url, headers=headers)
+                    if res.status_code == 200:
+                        data = res.json().get("data", {})
+                        ws_url = data.get("authorized_redirect_uri") or data.get("authorizedRedirectUri")
+                        if ws_url:
+                            logger.info("Retrieved authorized Upstox WS URL from %s", url)
+                            return ws_url
+                    else:
+                        last_error_text = f"HTTP {res.status_code}: {res.text[:120]}"
+                        logger.warning("Upstox WS Authorize (%s) failed with status %d: %s", url, res.status_code, res.text[:120])
+            except Exception as e:
+                last_error_text = f"Network error: {e}"
+                logger.warning("Failed to authorize Upstox WebSocket (%s): %s", url, e)
+
+        if last_error_text:
+            self._last_error = f"Upstox WS Authorize failed: {last_error_text}"
         return None
 
     async def _send_subscriptions(self, ws: Any):
@@ -309,7 +329,7 @@ class UpstoxWebSocketClient:
         payload = {
             "guid": "stock_intelligence_sub",
             "method": "sub",
-            "params": {
+            "data": {
                 "mode": "full",
                 "instrumentKeys": keys,
             },
@@ -317,12 +337,72 @@ class UpstoxWebSocketClient:
         await ws.send(json.dumps(payload))
 
     def _process_message(self, message: Any):
-        """Parse incoming market data message (JSON or binary)."""
+        """Parse incoming market data message (Protobuf binary or JSON)."""
         try:
             self._ticks_received += 1
             self._last_tick_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            if isinstance(message, str):
+            if isinstance(message, (bytes, bytearray)):
+                try:
+                    from app.services import MarketDataFeedV3_pb2 as pb
+                    feed_response = pb.FeedResponse()
+                    feed_response.ParseFromString(message)
+                    for key, feed in feed_response.feeds.items():
+                        sym = self.instrument_service.get_symbol_by_key(key)
+                        if not sym:
+                            continue
+
+                        ltp = 0.0
+                        close = None
+                        high = None
+                        low = None
+                        volume = 0
+
+                        which_feed = feed.WhichOneof("FeedUnion")
+                        if which_feed == "fullFeed":
+                            ff = feed.fullFeed
+                            which_ff = ff.WhichOneof("FullFeedUnion")
+                            if which_ff == "marketFF":
+                                mff = ff.marketFF
+                                ltp = float(mff.ltpc.ltp or 0.0)
+                                close = float(mff.ltpc.cp or 0.0) or None
+                                volume = int(mff.vtt or 0)
+                                if mff.marketOHLC and mff.marketOHLC.ohlc:
+                                    high = float(mff.marketOHLC.ohlc[0].high or 0.0) or None
+                                    low = float(mff.marketOHLC.ohlc[0].low or 0.0) or None
+                            elif which_ff == "indexFF":
+                                iff = ff.indexFF
+                                ltp = float(iff.ltpc.ltp or 0.0)
+                                close = float(iff.ltpc.cp or 0.0) or None
+                                if iff.marketOHLC and iff.marketOHLC.ohlc:
+                                    high = float(iff.marketOHLC.ohlc[0].high or 0.0) or None
+                                    low = float(iff.marketOHLC.ohlc[0].low or 0.0) or None
+                        elif which_feed == "ltpc":
+                            ltpc = feed.ltpc
+                            ltp = float(ltpc.ltp or 0.0)
+                            close = float(ltpc.cp or 0.0) or None
+                        elif which_feed == "firstLevelWithGreeks":
+                            fl = feed.firstLevelWithGreeks
+                            ltp = float(fl.ltpc.ltp or 0.0)
+                            close = float(fl.ltpc.cp or 0.0) or None
+                            volume = int(fl.vtt or 0)
+
+                        if ltp > 0:
+                            self.market_service.update_cache_from_tick(
+                                symbol=sym,
+                                ltp=ltp,
+                                volume=volume,
+                                high=high,
+                                low=low,
+                                close=close,
+                            )
+                            cached = self.market_service.get_cached_quote(sym)
+                            if cached:
+                                asyncio.create_task(self.broadcast_quote(cached))
+                except Exception as e:
+                    logger.debug("Error decoding binary protobuf tick: %s", e)
+
+            elif isinstance(message, str):
                 data = json.loads(message)
                 feeds = data.get("feeds", {})
                 for key, tick in feeds.items():

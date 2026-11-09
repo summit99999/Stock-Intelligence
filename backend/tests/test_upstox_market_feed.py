@@ -123,6 +123,27 @@ class TestUpstoxWebSocketClient:
         client.set_disabled()
         assert client.status == "DISABLED"
 
+    def test_protobuf_binary_tick_processing(self):
+        from app.services import MarketDataFeedV3_pb2 as pb
+        client = UpstoxWebSocketClient()
+        feed_resp = pb.FeedResponse()
+        feed_resp.type = pb.Type.live_feed
+
+        # Build RELIANCE feed (NSE_EQ|INE002A01018)
+        feed = feed_resp.feeds["NSE_EQ|INE002A01018"]
+        feed.fullFeed.marketFF.ltpc.ltp = 1450.50
+        feed.fullFeed.marketFF.ltpc.cp = 1440.00
+        feed.fullFeed.marketFF.vtt = 1200000
+
+        binary_bytes = feed_resp.SerializeToString()
+        client._process_message(binary_bytes)
+
+        cached = client.market_service.get_cached_quote("RELIANCE")
+        assert cached is not None
+        assert cached.ltp == 1450.50
+        assert cached.volume == 1200000
+        assert cached.source == "LIVE"
+
 
 class TestMarketFeedRouter:
     """Verifies market feed endpoints."""

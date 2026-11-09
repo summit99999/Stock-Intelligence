@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.database import list_ingestion_runs
 from app.services.market_movers_service import get_market_movers_and_confluence
-from app.services.dhan_market_service import get_dhan_market_service
+from app.services.upstox_market_service import get_upstox_market_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +27,9 @@ router = APIRouter(prefix="/api/market-movers", tags=["market-movers"])
 
 
 def _extract_live_quotes_dict() -> Optional[dict[str, Any]]:
-    """Extract live quotes from Dhan market service if active."""
+    """Extract live quotes from Upstox market service if active."""
     try:
-        market_svc = get_dhan_market_service()
+        market_svc = get_upstox_market_service()
         cached = market_svc.get_all_cached_quotes()
         live_dict: dict[str, Any] = {}
         for sym, q in cached.items():
@@ -40,7 +40,7 @@ def _extract_live_quotes_dict() -> Optional[dict[str, Any]]:
                     "volume": getattr(q, "volume", None),
                     "turnover": getattr(q, "turnover", None),
                     "change_percent": getattr(q, "change_percent", None),
-                    "timestamp": getattr(q, "timestamp", None),
+                    "timestamp": getattr(q, "updated_at", None),
                 }
         return live_dict if live_dict else None
     except Exception:

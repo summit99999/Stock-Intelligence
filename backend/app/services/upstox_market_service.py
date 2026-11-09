@@ -59,8 +59,12 @@ class UpstoxMarketService:
         headers = self._get_auth_headers()
         cfg = get_upstox_config()
 
-        # If live credentials not configured or live data disabled, return demo quotes
-        if not headers or not cfg.live_data_enabled:
+        # Check if we have an active token or live data explicitly enabled
+        has_token = bool(headers and headers.get("Authorization"))
+        is_enabled = bool(cfg.live_data_enabled or has_token)
+
+        # If no credentials available or live data disabled, return fallback quotes
+        if not has_token or not is_enabled:
             return self._generate_fallback_quotes(target_symbols)
 
         # Map symbols to Upstox instrument keys

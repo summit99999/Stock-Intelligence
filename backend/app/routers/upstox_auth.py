@@ -58,6 +58,11 @@ async def oauth_callback(req: UpstoxCallbackRequest):
     res = await service.exchange_code_for_token(req.code)
     if not res.success:
         raise HTTPException(status_code=400, detail=res.message)
+    try:
+        from app.services.upstox_ws_client import get_upstox_ws_client
+        get_upstox_ws_client().start(force=True)
+    except Exception as e:
+        logger.warning("Could not auto-start Upstox WebSocket: %s", e)
     return res
 
 
@@ -68,6 +73,11 @@ async def set_direct_token(req: UpstoxDirectTokenRequest):
     res = await service.validate_and_save_direct_token(req.access_token, force=req.force)
     if not res.success:
         raise HTTPException(status_code=400, detail=res.message)
+    try:
+        from app.services.upstox_ws_client import get_upstox_ws_client
+        get_upstox_ws_client().start(force=True)
+    except Exception as e:
+        logger.warning("Could not auto-start Upstox WebSocket: %s", e)
     return res
 
 
@@ -76,4 +86,10 @@ def delete_token():
     """Disconnect and delete the active Upstox access token."""
     service = get_upstox_auth_service()
     service.logout()
+    try:
+        from app.services.upstox_ws_client import get_upstox_ws_client
+        ws_client = get_upstox_ws_client()
+        ws_client.set_disabled()
+    except Exception as e:
+        logger.warning("Could not stop Upstox WebSocket: %s", e)
     return {"success": True, "message": "Upstox disconnected successfully."}
