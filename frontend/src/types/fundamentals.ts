@@ -192,6 +192,136 @@ export interface ShareholdingPattern {
   verification_status: string;
 }
 
+export interface Performance1Y {
+  symbol: string;
+  start_date: string;
+  end_date: string;
+  start_price: number;
+  end_price: number;
+  absolute_change: number;
+  return_pct: number;
+  week_52_high: number;
+  week_52_low: number;
+  current_position_in_52w_range_pct: number;
+  trading_days_analyzed: number;
+  history_series: { date: string; close: number; volume: number }[];
+  data_available: boolean;
+}
+
+export interface RelativeStrengthData {
+  symbol: string;
+  benchmark_symbol: string;
+  rs_rating: number;
+  stock_return_1m_pct: number;
+  benchmark_return_1m_pct: number;
+  relative_performance_1m: number;
+  stock_return_3m_pct: number;
+  benchmark_return_3m_pct: number;
+  relative_performance_3m: number;
+  stock_return_6m_pct: number;
+  benchmark_return_6m_pct: number;
+  relative_performance_6m: number;
+  stock_return_12m_pct: number;
+  benchmark_return_12m_pct: number;
+  relative_performance_12m: number;
+  rs_status: string;
+  is_outperforming: boolean;
+}
+
+export interface DvmScoreComponent {
+  metric: string;
+  value: any;
+  score: number;
+  weight_pct: number;
+  weighted_score: number;
+  formula: string;
+}
+
+export interface DvmScoresData {
+  symbol: string;
+  overall_score: number;
+  classification: "Excellent" | "Strong" | "Moderate" | "Weak" | "Poor";
+  durability: {
+    score: number;
+    weight_pct: number;
+    description: string;
+    components: DvmScoreComponent[];
+  };
+  valuation: {
+    score: number;
+    weight_pct: number;
+    description: string;
+    components: DvmScoreComponent[];
+  };
+  momentum: {
+    score: number;
+    weight_pct: number;
+    description: string;
+    components: DvmScoreComponent[];
+  };
+  methodology_audit: {
+    durability_weight: number;
+    valuation_weight: number;
+    momentum_weight: number;
+    formula: string;
+  };
+}
+
+export interface ChecklistItem {
+  id: string;
+  category: string;
+  title: string;
+  criterion: string;
+  observed_value: string;
+  status: "PASSED" | "FAILED" | "NEUTRAL";
+  importance: "CRITICAL" | "HIGH" | "MEDIUM";
+}
+
+export interface ChecklistSwotData {
+  symbol: string;
+  passed_count: number;
+  failed_count: number;
+  neutral_count: number;
+  total_criteria: number;
+  pass_percentage: number;
+  checklist: ChecklistItem[];
+  swot: {
+    strengths: string[];
+    weaknesses: string[];
+    opportunities: string[];
+    threats: string[];
+  };
+}
+
+export interface SectorPeerItem {
+  symbol: string;
+  company_name: string;
+  sector: string;
+  close: number;
+  daily_change_pct: number;
+  market_cap_cr: number;
+  pe?: number | null;
+  pb?: number | null;
+  roe?: number | null;
+  roce?: number | null;
+  opm_pct?: number | null;
+  debt_equity?: number | null;
+  rev_growth_pct?: number | null;
+  profit_growth_pct?: number | null;
+  dvm_overall?: number | null;
+  dvm_classification?: string | null;
+  durability_score?: number | null;
+  valuation_score?: number | null;
+  momentum_score?: number | null;
+}
+
+export interface SectorPeersData {
+  symbol: string;
+  sector: string;
+  peers: SectorPeerItem[];
+  peer_count: number;
+}
+
 export interface CompanyResearchDossier {
   symbol: string;
   company_name: string;
@@ -214,6 +344,11 @@ export interface CompanyResearchDossier {
   calculated_ratios?: CalculatedRatiosResult | null;
   quality_score?: QualityScoreResult | null;
   peers?: PeerComparisonResponse | null;
+  performance_1y?: Performance1Y | null;
+  relative_strength?: RelativeStrengthData | null;
+  dvm_scores?: DvmScoresData | null;
+  checklist_swot?: ChecklistSwotData | null;
+  sector_peers?: SectorPeersData | null;
   corporate_actions: any[];
   competitors: any[];
   provenance: {

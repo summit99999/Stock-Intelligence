@@ -277,6 +277,197 @@ COMPANY_DATA: dict[str, dict[str, Any]] = {
             {"period": "Q4FY2024", "period_end": "2024-03-31", "promoter": 0.0, "pledge": 0.0, "fii": 47.80, "dii": 35.80, "public": 16.40},
         ],
     },
+    "ETERNAL": {
+        "isin": "INE758T01015",
+        "company_name": "Eternal Ltd (formerly Zomato Ltd)",
+        "sector": "Consumer Services",
+        "industry": "Internet & Quick Commerce",
+        "exchange": "NSE",
+        "face_value": 1.0,
+        "market_cap_cr": 245000.0,
+        "year_of_incorporation": 2010,
+        "annual": [
+            {
+                "period": "FY2021", "period_end": "2021-03-31",
+                "rev": 1994.0, "ebitda": -467.0, "ebit": -467.0, "net_profit": -816.0, "eps": -1.10,
+                "assets": 8704.0, "equity": 7650.0, "debt": 0.0, "cash": 3200.0, "bvps": 9.7,
+                "cfo": -1017.0, "capex": 50.0, "fcf": -1067.0,
+                "roe": -10.7, "roce": -6.1, "pe": None,
+            },
+            {
+                "period": "FY2022", "period_end": "2022-03-31",
+                "rev": 4192.0, "ebitda": -1009.0, "ebit": -1009.0, "net_profit": -1222.0, "eps": -1.60,
+                "assets": 17327.0, "equity": 16505.0, "debt": 0.0, "cash": 12200.0, "bvps": 21.0,
+                "cfo": -701.0, "capex": 150.0, "fcf": -851.0,
+                "roe": -7.4, "roce": -6.1, "pe": None,
+            },
+            {
+                "period": "FY2023", "period_end": "2023-03-31",
+                "rev": 7079.0, "ebitda": -722.0, "ebit": -722.0, "net_profit": -971.0, "eps": -1.14,
+                "assets": 20436.0, "equity": 19450.0, "debt": 0.0, "cash": 11300.0, "bvps": 22.8,
+                "cfo": -844.0, "capex": 200.0, "fcf": -1044.0,
+                "roe": -5.0, "roce": -3.7, "pe": None,
+            },
+            {
+                "period": "FY2024", "period_end": "2024-03-31",
+                "rev": 12114.0, "ebitda": 540.0, "ebit": 210.0, "net_profit": 351.0, "eps": 0.40,
+                "assets": 21800.0, "equity": 20100.0, "debt": 0.0, "cash": 12400.0, "bvps": 23.5,
+                "cfo": 1100.0, "capex": 250.0, "fcf": 850.0,
+                "roe": 1.75, "roce": 1.04, "pe": 900.0,
+            },
+        ],
+        "quarterly": [
+            {"period": "Q3FY2022", "period_end": "2021-12-31", "rev": 1112.0, "opex": 1550.0, "operating_profit": -438.0, "ebitda": -400.0, "depreciation": 38.0, "ebit": -438.0, "interest": 4.0, "pbt": -442.0, "tax": 0.0, "net_profit": -442.0, "eps": -0.56},
+            {"period": "Q4FY2022", "period_end": "2022-03-31", "rev": 1212.0, "opex": 1572.0, "operating_profit": -360.0, "ebitda": -319.0, "depreciation": 41.0, "ebit": -360.0, "interest": 5.0, "pbt": -365.0, "tax": 0.0, "net_profit": -365.0, "eps": -0.46},
+            {"period": "Q1FY2023", "period_end": "2022-06-30", "rev": 1414.0, "opex": 1721.0, "operating_profit": -307.0, "ebitda": -265.0, "depreciation": 42.0, "ebit": -307.0, "interest": 6.0, "pbt": -313.0, "tax": 0.0, "net_profit": -313.0, "eps": -0.39},
+            {"period": "Q2FY2023", "period_end": "2022-09-30", "rev": 1661.0, "opex": 1912.0, "operating_profit": -251.0, "ebitda": -208.0, "depreciation": 43.0, "ebit": -251.0, "interest": 7.0, "pbt": -258.0, "tax": 0.0, "net_profit": -258.0, "eps": -0.32},
+            {"period": "Q3FY2023", "period_end": "2022-12-31", "rev": 1948.0, "opex": 2147.0, "operating_profit": -199.0, "ebitda": -155.0, "depreciation": 44.0, "ebit": -199.0, "interest": 8.0, "pbt": -207.0, "tax": 0.0, "net_profit": -207.0, "eps": -0.25},
+            {"period": "Q4FY2023", "period_end": "2023-03-31", "rev": 2056.0, "opex": 2188.0, "operating_profit": -132.0, "ebitda": -87.0, "depreciation": 45.0, "ebit": -132.0, "interest": 8.0, "pbt": -140.0, "tax": 0.0, "net_profit": -140.0, "eps": -0.17},
+            {"period": "Q1FY2024", "period_end": "2023-06-30", "rev": 2416.0, "opex": 2404.0, "operating_profit": 12.0, "ebitda": 63.0, "depreciation": 51.0, "ebit": 12.0, "interest": 10.0, "pbt": 2.0, "tax": 0.0, "net_profit": 2.0, "eps": 0.00},
+            {"period": "Q2FY2024", "period_end": "2023-09-30", "rev": 2848.0, "opex": 2795.0, "operating_profit": 53.0, "ebitda": 110.0, "depreciation": 57.0, "ebit": 53.0, "interest": 11.0, "pbt": 36.0, "tax": 0.0, "net_profit": 36.0, "eps": 0.04},
+            {"period": "Q3FY2024", "period_end": "2023-12-31", "rev": 3288.0, "opex": 3150.0, "operating_profit": 138.0, "ebitda": 200.0, "depreciation": 62.0, "ebit": 138.0, "interest": 12.0, "pbt": 138.0, "tax": 0.0, "net_profit": 138.0, "eps": 0.16},
+            {"period": "Q4FY2024", "period_end": "2024-03-31", "rev": 3562.0, "opex": 3368.0, "operating_profit": 194.0, "ebitda": 261.0, "depreciation": 67.0, "ebit": 194.0, "interest": 13.0, "pbt": 175.0, "tax": 0.0, "net_profit": 175.0, "eps": 0.20},
+            {"period": "Q1FY2025", "period_end": "2024-06-30", "rev": 4206.0, "opex": 3907.0, "operating_profit": 299.0, "ebitda": 373.0, "depreciation": 74.0, "ebit": 299.0, "interest": 15.0, "pbt": 253.0, "tax": 0.0, "net_profit": 253.0, "eps": 0.29},
+            {"period": "Q2FY2025", "period_end": "2024-09-30", "rev": 4799.0, "opex": 4410.0, "operating_profit": 389.0, "ebitda": 470.0, "depreciation": 81.0, "ebit": 389.0, "interest": 16.0, "pbt": 176.0, "tax": 0.0, "net_profit": 176.0, "eps": 0.20},
+        ],
+        "shareholding": [
+            {"period": "Q2FY2025", "period_end": "2024-09-30", "promoter": 0.0, "pledge": 0.0, "fii": 52.30, "dii": 16.80, "public": 30.90},
+            {"period": "Q1FY2025", "period_end": "2024-06-30", "promoter": 0.0, "pledge": 0.0, "fii": 54.10, "dii": 15.40, "public": 30.50},
+            {"period": "Q4FY2024", "period_end": "2024-03-31", "promoter": 0.0, "pledge": 0.0, "fii": 55.20, "dii": 14.80, "public": 30.00},
+        ],
+    },
+    "BEL": {
+        "isin": "INE263A01024",
+        "company_name": "Bharat Electronics Limited",
+        "sector": "Defence",
+        "industry": "Aerospace & Defence Electronics",
+        "exchange": "NSE",
+        "face_value": 1.0,
+        "market_cap_cr": 215000.0,
+        "year_of_incorporation": 1954,
+        "annual": [
+            {
+                "period": "FY2020", "period_end": "2020-03-31",
+                "rev": 12921.0, "ebitda": 2730.0, "ebit": 2410.0, "net_profit": 1794.0, "eps": 2.45,
+                "assets": 24500.0, "equity": 9850.0, "debt": 0.0, "cash": 2100.0, "bvps": 13.5,
+                "cfo": 2410.0, "capex": 580.0, "fcf": 1830.0,
+                "roe": 18.2, "roce": 24.5, "pe": 16.5,
+            },
+            {
+                "period": "FY2021", "period_end": "2021-03-31",
+                "rev": 14064.0, "ebitda": 3181.0, "ebit": 2831.0, "net_profit": 2065.0, "eps": 2.83,
+                "assets": 28000.0, "equity": 10850.0, "debt": 0.0, "cash": 3200.0, "bvps": 14.8,
+                "cfo": 3800.0, "capex": 620.0, "fcf": 3180.0,
+                "roe": 19.0, "roce": 26.1, "pe": 22.0,
+            },
+            {
+                "period": "FY2022", "period_end": "2022-03-31",
+                "rev": 15314.0, "ebitda": 3309.0, "ebit": 2928.0, "net_profit": 2349.0, "eps": 3.21,
+                "assets": 31200.0, "equity": 12050.0, "debt": 0.0, "cash": 5500.0, "bvps": 16.5,
+                "cfo": 3950.0, "capex": 650.0, "fcf": 3300.0,
+                "roe": 19.5, "roce": 24.3, "pe": 28.5,
+            },
+            {
+                "period": "FY2023", "period_end": "2023-03-31",
+                "rev": 17333.0, "ebitda": 4004.0, "ebit": 3584.0, "net_profit": 2984.0, "eps": 4.08,
+                "assets": 35400.0, "equity": 13900.0, "debt": 0.0, "cash": 7200.0, "bvps": 19.0,
+                "cfo": 4320.0, "capex": 700.0, "fcf": 3620.0,
+                "roe": 21.5, "roce": 25.8, "pe": 26.8,
+            },
+            {
+                "period": "FY2024", "period_end": "2024-03-31",
+                "rev": 20268.0, "ebitda": 5013.0, "ebit": 4578.0, "net_profit": 3985.0, "eps": 5.45,
+                "assets": 39800.0, "equity": 16400.0, "debt": 0.0, "cash": 8800.0, "bvps": 22.4,
+                "cfo": 4850.0, "capex": 800.0, "fcf": 4050.0,
+                "roe": 24.3, "roce": 27.9, "pe": 42.5,
+            },
+        ],
+        "quarterly": [
+            {"period": "Q3FY2022", "period_end": "2021-12-31", "rev": 3693.0, "opex": 2871.0, "operating_profit": 822.0, "ebitda": 917.0, "depreciation": 95.0, "ebit": 822.0, "interest": 2.0, "pbt": 779.0, "tax": 196.0, "net_profit": 583.0, "eps": 0.80},
+            {"period": "Q4FY2022", "period_end": "2022-03-31", "rev": 6325.0, "opex": 4744.0, "operating_profit": 1581.0, "ebitda": 1679.0, "depreciation": 98.0, "ebit": 1581.0, "interest": 2.0, "pbt": 1526.0, "tax": 384.0, "net_profit": 1142.0, "eps": 1.56},
+            {"period": "Q1FY2023", "period_end": "2022-06-30", "rev": 3113.0, "opex": 2598.0, "operating_profit": 515.0, "ebitda": 612.0, "depreciation": 97.0, "ebit": 515.0, "interest": 2.0, "pbt": 556.0, "tax": 141.0, "net_profit": 415.0, "eps": 0.57},
+            {"period": "Q2FY2023", "period_end": "2022-09-30", "rev": 3946.0, "opex": 3089.0, "operating_profit": 857.0, "ebitda": 959.0, "depreciation": 102.0, "ebit": 857.0, "interest": 2.0, "pbt": 811.0, "tax": 205.0, "net_profit": 606.0, "eps": 0.83},
+            {"period": "Q3FY2023", "period_end": "2022-12-31", "rev": 4131.0, "opex": 3278.0, "operating_profit": 853.0, "ebitda": 957.0, "depreciation": 104.0, "ebit": 853.0, "interest": 2.0, "pbt": 801.0, "tax": 202.0, "net_profit": 599.0, "eps": 0.82},
+            {"period": "Q4FY2023", "period_end": "2023-03-31", "rev": 6457.0, "opex": 4697.0, "operating_profit": 1760.0, "ebitda": 1867.0, "depreciation": 107.0, "ebit": 1760.0, "interest": 3.0, "pbt": 1782.0, "tax": 418.0, "net_profit": 1364.0, "eps": 1.87},
+            {"period": "Q1FY2024", "period_end": "2023-06-30", "rev": 3511.0, "opex": 2847.0, "operating_profit": 664.0, "ebitda": 772.0, "depreciation": 108.0, "ebit": 664.0, "interest": 2.0, "pbt": 704.0, "tax": 174.0, "net_profit": 530.0, "eps": 0.73},
+            {"period": "Q2FY2024", "period_end": "2023-09-30", "rev": 3993.0, "opex": 2989.0, "operating_profit": 1004.0, "ebitda": 1114.0, "depreciation": 110.0, "ebit": 1004.0, "interest": 2.0, "pbt": 1073.0, "tax": 260.0, "net_profit": 813.0, "eps": 1.11},
+            {"period": "Q3FY2024", "period_end": "2023-12-31", "rev": 4162.0, "opex": 3090.0, "operating_profit": 1072.0, "ebitda": 1184.0, "depreciation": 112.0, "ebit": 1072.0, "interest": 3.0, "pbt": 1146.0, "tax": 287.0, "net_profit": 859.0, "eps": 1.18},
+            {"period": "Q4FY2024", "period_end": "2024-03-31", "rev": 8564.0, "opex": 6289.0, "operating_profit": 2275.0, "ebitda": 2393.0, "depreciation": 118.0, "ebit": 2275.0, "interest": 4.0, "pbt": 2391.0, "tax": 608.0, "net_profit": 1783.0, "eps": 2.44},
+            {"period": "Q1FY2025", "period_end": "2024-06-30", "rev": 4199.0, "opex": 3254.0, "operating_profit": 945.0, "ebitda": 1060.0, "depreciation": 115.0, "ebit": 945.0, "interest": 3.0, "pbt": 1039.0, "tax": 263.0, "net_profit": 776.0, "eps": 1.06},
+            {"period": "Q2FY2025", "period_end": "2024-09-30", "rev": 4583.0, "opex": 3345.0, "operating_profit": 1238.0, "ebitda": 1357.0, "depreciation": 119.0, "ebit": 1238.0, "interest": 3.0, "pbt": 1438.0, "tax": 347.0, "net_profit": 1091.0, "eps": 1.49},
+        ],
+        "shareholding": [
+            {"period": "Q2FY2025", "period_end": "2024-09-30", "promoter": 51.14, "pledge": 0.0, "fii": 17.40, "dii": 23.90, "public": 7.56},
+            {"period": "Q1FY2025", "period_end": "2024-06-30", "promoter": 51.14, "pledge": 0.0, "fii": 17.20, "dii": 24.10, "public": 7.56},
+            {"period": "Q4FY2024", "period_end": "2024-03-31", "promoter": 51.14, "pledge": 0.0, "fii": 17.50, "dii": 23.60, "public": 7.76},
+        ],
+    },
+    "TRENT": {
+        "isin": "INE849A01020",
+        "company_name": "Trent Limited (A Tata Enterprise)",
+        "sector": "Consumer",
+        "industry": "Apparel & Lifestyle Retail",
+        "exchange": "NSE",
+        "face_value": 1.0,
+        "market_cap_cr": 220000.0,
+        "year_of_incorporation": 1952,
+        "annual": [
+            {
+                "period": "FY2020", "period_end": "2020-03-31",
+                "rev": 3178.0, "ebitda": 544.0, "ebit": 298.0, "net_profit": 106.0, "eps": 2.98,
+                "assets": 4900.0, "equity": 2380.0, "debt": 300.0, "cash": 560.0, "bvps": 67.0,
+                "cfo": 480.0, "capex": 210.0, "fcf": 270.0,
+                "roe": 4.5, "roce": 7.5, "pe": 180.0,
+            },
+            {
+                "period": "FY2021", "period_end": "2021-03-31",
+                "rev": 2048.0, "ebitda": 175.0, "ebit": -61.0, "net_profit": -181.0, "eps": -5.09,
+                "assets": 5200.0, "equity": 2250.0, "debt": 300.0, "cash": 450.0, "bvps": 63.3,
+                "cfo": 190.0, "capex": 120.0, "fcf": 70.0,
+                "roe": -8.0, "roce": -1.5, "pe": None,
+            },
+            {
+                "period": "FY2022", "period_end": "2022-03-31",
+                "rev": 3881.0, "ebitda": 574.0, "ebit": 288.0, "net_profit": 35.0, "eps": 0.98,
+                "assets": 6500.0, "equity": 2350.0, "debt": 500.0, "cash": 520.0, "bvps": 66.1,
+                "cfo": 410.0, "capex": 250.0, "fcf": 160.0,
+                "roe": 1.5, "roce": 6.8, "pe": 1200.0,
+            },
+            {
+                "period": "FY2023", "period_end": "2023-03-31",
+                "rev": 8242.0, "ebitda": 1119.0, "ebit": 695.0, "net_profit": 394.0, "eps": 11.08,
+                "assets": 8800.0, "equity": 2650.0, "debt": 500.0, "cash": 610.0, "bvps": 74.5,
+                "cfo": 890.0, "capex": 420.0, "fcf": 470.0,
+                "roe": 14.8, "roce": 17.5, "pe": 125.0,
+            },
+            {
+                "period": "FY2024", "period_end": "2024-03-31",
+                "rev": 12375.0, "ebitda": 2110.0, "ebit": 1570.0, "net_profit": 1477.0, "eps": 41.55,
+                "assets": 11200.0, "equity": 4200.0, "debt": 480.0, "cash": 950.0, "bvps": 118.0,
+                "cfo": 1950.0, "capex": 600.0, "fcf": 1350.0,
+                "roe": 35.2, "roce": 32.5, "pe": 110.0,
+            },
+        ],
+        "quarterly": [
+            {"period": "Q3FY2022", "period_end": "2021-12-31", "rev": 1349.0, "opex": 1150.0, "operating_profit": 199.0, "ebitda": 272.0, "depreciation": 73.0, "ebit": 199.0, "interest": 72.0, "pbt": 174.0, "tax": 41.0, "net_profit": 133.0, "eps": 3.74},
+            {"period": "Q4FY2022", "period_end": "2022-03-31", "rev": 1185.0, "opex": 1032.0, "operating_profit": 153.0, "ebitda": 228.0, "depreciation": 75.0, "ebit": 153.0, "interest": 74.0, "pbt": 24.0, "tax": 7.0, "net_profit": 17.0, "eps": 0.48},
+            {"period": "Q1FY2023", "period_end": "2022-06-30", "rev": 1653.0, "opex": 1349.0, "operating_profit": 304.0, "ebitda": 390.0, "depreciation": 86.0, "ebit": 304.0, "interest": 85.0, "pbt": 152.0, "tax": 37.0, "net_profit": 115.0, "eps": 3.23},
+            {"period": "Q2FY2023", "period_end": "2022-09-30", "rev": 1814.0, "opex": 1546.0, "operating_profit": 268.0, "ebitda": 363.0, "depreciation": 95.0, "ebit": 268.0, "interest": 89.0, "pbt": 117.0, "tax": 24.0, "net_profit": 93.0, "eps": 2.62},
+            {"period": "Q3FY2023", "period_end": "2022-12-31", "rev": 2171.0, "opex": 1835.0, "operating_profit": 336.0, "ebitda": 439.0, "depreciation": 103.0, "ebit": 336.0, "interest": 92.0, "pbt": 206.0, "tax": 51.0, "net_profit": 155.0, "eps": 4.36},
+            {"period": "Q4FY2023", "period_end": "2023-03-31", "rev": 2077.0, "opex": 1867.0, "operating_profit": 210.0, "ebitda": 320.0, "depreciation": 110.0, "ebit": 210.0, "interest": 98.0, "pbt": 59.0, "tax": 14.0, "net_profit": 45.0, "eps": 1.27},
+            {"period": "Q1FY2024", "period_end": "2023-06-30", "rev": 2514.0, "opex": 2147.0, "operating_profit": 367.0, "ebitda": 492.0, "depreciation": 125.0, "ebit": 367.0, "interest": 102.0, "pbt": 206.0, "tax": 58.0, "net_profit": 148.0, "eps": 4.16},
+            {"period": "Q2FY2024", "period_end": "2023-09-30", "rev": 2891.0, "opex": 2434.0, "operating_profit": 457.0, "ebitda": 595.0, "depreciation": 138.0, "ebit": 457.0, "interest": 107.0, "pbt": 304.0, "tax": 76.0, "net_profit": 228.0, "eps": 6.41},
+            {"period": "Q3FY2024", "period_end": "2023-12-31", "rev": 3312.0, "opex": 2683.0, "operating_profit": 629.0, "ebitda": 781.0, "depreciation": 152.0, "ebit": 629.0, "interest": 114.0, "pbt": 482.0, "tax": 111.0, "net_profit": 371.0, "eps": 10.43},
+            {"period": "Q4FY2024", "period_end": "2024-03-31", "rev": 3187.0, "opex": 2707.0, "operating_profit": 480.0, "ebitda": 643.0, "depreciation": 163.0, "ebit": 480.0, "interest": 120.0, "pbt": 942.0, "tax": 230.0, "net_profit": 712.0, "eps": 20.03},
+            {"period": "Q1FY2025", "period_end": "2024-06-30", "rev": 3992.0, "opex": 3381.0, "operating_profit": 611.0, "ebitda": 796.0, "depreciation": 185.0, "ebit": 611.0, "interest": 132.0, "pbt": 471.0, "tax": 136.0, "net_profit": 335.0, "eps": 9.42},
+            {"period": "Q2FY2025", "period_end": "2024-09-30", "rev": 4035.0, "opex": 3443.0, "operating_profit": 592.0, "ebitda": 790.0, "depreciation": 198.0, "ebit": 592.0, "interest": 139.0, "pbt": 421.0, "tax": 103.0, "net_profit": 318.0, "eps": 8.94},
+        ],
+        "shareholding": [
+            {"period": "Q2FY2025", "period_end": "2024-09-30", "promoter": 37.01, "pledge": 0.0, "fii": 28.00, "dii": 15.60, "public": 19.39},
+            {"period": "Q1FY2025", "period_end": "2024-06-30", "promoter": 37.01, "pledge": 0.0, "fii": 27.80, "dii": 15.70, "public": 19.49},
+            {"period": "Q4FY2024", "period_end": "2024-03-31", "promoter": 37.01, "pledge": 0.0, "fii": 27.40, "dii": 15.90, "public": 19.69},
+        ],
+    },
 }
 
 
@@ -288,16 +479,14 @@ def seed_fundamental_data(force: bool = False) -> int:
     from app.database import connect
 
     total_seeded = 0
-    with connect() as con:
-        # Check if already seeded
-        if not force:
-            count = con.execute("SELECT COUNT(*) FROM fundamental_income_statements").fetchone()[0]
-            if count >= 10:
-                logger.info("Fundamental data already populated (%d statements)", count)
-                return count
 
     for symbol, data in COMPANY_DATA.items():
         isin = data["isin"]
+
+        with connect() as con:
+            count = con.execute("SELECT COUNT(*) FROM fundamental_income_statements WHERE symbol = ?", (symbol,)).fetchone()[0]
+            if count >= 4 and not force:
+                continue
 
         # 1. Company Profile
         profile = CompanyProfile(
@@ -392,6 +581,17 @@ def seed_fundamental_data(force: bool = False) -> int:
 
         # 3. Quarterly Statements
         for q in data.get("quarterly", []):
+            rev = float(q["rev"])
+            np_val = float(q["net_profit"])
+            ebit = float(q.get("ebit") or (rev * 0.22))
+            deprec = float(q.get("depreciation") or (rev * 0.04))
+            ebitda = float(q.get("ebitda") or (ebit + deprec))
+            opex = float(q.get("opex") or max(0.0, rev - ebitda))
+            op = float(q.get("operating_profit") or ebitda)
+            interest = float(q.get("interest") or 0.0)
+            pbt = float(q.get("pbt") or max(np_val, ebit - interest))
+            tax = float(q.get("tax") or max(0.0, pbt - np_val))
+
             q_inc = IncomeStatement(
                 symbol=symbol,
                 isin=isin,
@@ -399,9 +599,16 @@ def seed_fundamental_data(force: bool = False) -> int:
                 period_end_date=q["period_end"],
                 statement_type=StatementType.CONSOLIDATED,
                 frequency=ReportingFrequency.QUARTERLY,
-                revenue_cr=q["rev"],
-                ebit_cr=q["ebit"],
-                net_profit_cr=q["net_profit"],
+                revenue_cr=round(rev, 2),
+                operating_expenses_cr=round(opex, 2),
+                operating_profit_cr=round(op, 2),
+                ebitda_cr=round(ebitda, 2),
+                depreciation_cr=round(deprec, 2),
+                ebit_cr=round(ebit, 2),
+                interest_expense_cr=round(interest, 2),
+                profit_before_tax_cr=round(pbt, 2),
+                tax_expense_cr=round(tax, 2),
+                net_profit_cr=round(np_val, 2),
                 eps=q.get("eps"),
                 verification_status="verified",
                 source=FundamentalSource.DEMO,

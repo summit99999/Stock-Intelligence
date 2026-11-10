@@ -65,6 +65,13 @@ from app.services.quality_score_service import (
     QualityScoreResult,
     calculate_quality_score,
 )
+from app.services.equity_research_service import (
+    calculate_1y_performance,
+    calculate_relative_strength,
+    calculate_dvm_scores,
+    generate_fundamental_checklist_and_swot,
+    get_sector_peer_comparison,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +106,11 @@ class CompanyResearchDossier(BaseModel):
     calculated_ratios: Optional[CalculatedRatiosResult] = None
     quality_score: Optional[QualityScoreResult] = None
     peers: Optional[PeerComparisonResponse] = None
+    performance_1y: Optional[dict[str, Any]] = None
+    relative_strength: Optional[dict[str, Any]] = None
+    dvm_scores: Optional[dict[str, Any]] = None
+    checklist_swot: Optional[dict[str, Any]] = None
+    sector_peers: Optional[dict[str, Any]] = None
     corporate_actions: list[dict[str, Any]] = Field(default_factory=list)
     competitors: list[dict[str, Any]] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
@@ -390,6 +402,36 @@ def get_company_research(symbol: str) -> CompanyResearchDossier:
         is_price_stale = calc_ratios.valuation.is_price_stale
         price_date = calc_ratios.valuation.price_date
 
+    perf_1y = None
+    try:
+        perf_1y = calculate_1y_performance(symbol_upper)
+    except Exception as exc:
+        logger.warning("Could not calculate 1y performance for %s: %s", symbol_upper, exc)
+
+    rs_data = None
+    try:
+        rs_data = calculate_relative_strength(symbol_upper)
+    except Exception as exc:
+        logger.warning("Could not calculate relative strength for %s: %s", symbol_upper, exc)
+
+    dvm_data = None
+    try:
+        dvm_data = calculate_dvm_scores(symbol_upper)
+    except Exception as exc:
+        logger.warning("Could not calculate DVM scores for %s: %s", symbol_upper, exc)
+
+    swot_data = None
+    try:
+        swot_data = generate_fundamental_checklist_and_swot(symbol_upper)
+    except Exception as exc:
+        logger.warning("Could not generate checklist and swot for %s: %s", symbol_upper, exc)
+
+    sector_peers_data = None
+    try:
+        sector_peers_data = get_sector_peer_comparison(symbol_upper)
+    except Exception as exc:
+        logger.warning("Could not get sector peers for %s: %s", symbol_upper, exc)
+
     provenance = {
         "primary_source": primary_src,
         "verification_status": ver_status,
@@ -420,10 +462,52 @@ def get_company_research(symbol: str) -> CompanyResearchDossier:
         calculated_ratios=calc_ratios,
         quality_score=q_score,
         peers=peers,
+        performance_1y=perf_1y,
+        relative_strength=rs_data,
+        dvm_scores=dvm_data,
+        checklist_swot=swot_data,
+        sector_peers=sector_peers_data,
         corporate_actions=c_actions,
         competitors=comps,
         provenance=provenance,
     )
+
+
+# ---------------------------------------------------------------------------
+# Advanced Equity Research Endpoints (1Y Perf, RS, DVM, SWOT, Sector Peers)
+# ---------------------------------------------------------------------------
+
+@router.get("/company/{symbol}/performance-1y")
+def get_company_performance_1y(symbol: str) -> dict[str, Any]:
+    """Retrieve 1-year historical price performance, start/end prices, % return and 52W range."""
+    return calculate_1y_performance(symbol)
+
+
+@router.get("/company/{symbol}/relative-strength")
+def get_company_relative_strength(
+    symbol: str,
+    benchmark: str = Query("NIFTY 50", description="Benchmark symbol (default: NIFTY 50)")
+) -> dict[str, Any]:
+    """Retrieve Relative Strength (0-100) and 1M/3M/6M/12M relative returns vs benchmark."""
+    return calculate_relative_strength(symbol, benchmark=benchmark)
+
+
+@router.get("/company/{symbol}/dvm")
+def get_company_dvm_scores(symbol: str) -> dict[str, Any]:
+    """Retrieve 0-100 Durability, Valuation, Momentum, and Overall DVM scores with methodology audit."""
+    return calculate_dvm_scores(symbol)
+
+
+@router.get("/company/{symbol}/checklist-swot")
+def get_company_checklist_swot(symbol: str) -> dict[str, Any]:
+    """Retrieve 9-point fundamental checklist and 4-quadrant SWOT grounded in financial data."""
+    return generate_fundamental_checklist_and_swot(symbol)
+
+
+@router.get("/company/{symbol}/sector-peers")
+def get_company_sector_peers(symbol: str) -> dict[str, Any]:
+    """Retrieve sector-aware peer comparison matrix with valuation, growth, margins and DVM scores."""
+    return get_sector_peer_comparison(symbol)
 
 
 # ---------------------------------------------------------------------------

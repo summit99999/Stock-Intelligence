@@ -120,20 +120,8 @@ def get_stock_advanced_analysis(
     if not stock_meta:
         raise HTTPException(status_code=404, detail=f"Stock '{sym}' not found.")
 
-    bars = get_bars(sym)
-    if not bars or len(bars) < 5:
-        # Fetch on-demand historical bars from provider (Upstox / YFinance)
-        try:
-            from app.providers.manager import get_provider_manager
-            from app.database import upsert_ohlcv
-            mgr = get_provider_manager()
-            df = mgr.fetch_history(sym, period="1y")
-            if df is not None and not df.empty:
-                bars_list = df.to_dict(orient="records")
-                upsert_ohlcv(sym, bars_list, interval="daily", source="provider_ondemand")
-                bars = get_bars(sym)
-        except Exception as e:
-            pass
+    from app.services.candle_service import get_multi_timeframe_bars
+    bars = get_multi_timeframe_bars(sym, timeframe=timeframe)
 
     if not bars or len(bars) < 5:
         # Fall back to returning metadata and empty structures if bars are missing
