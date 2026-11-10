@@ -22,6 +22,9 @@ import MoneyFlowIntelligenceView from "./components/MoneyFlowIntelligenceView";
 import UnifiedResearchDashboardView from "./components/UnifiedResearchDashboardView";
 import DashboardHome from "./components/DashboardHome";
 import IntradayDataHealthView from "./components/IntradayDataHealthView";
+import Nifty50IndexView from "./components/Nifty50IndexView";
+import NiftyOptionChainView from "./components/NiftyOptionChainView";
+import StockSearchAutocomplete from "./components/StockSearchAutocomplete";
 import { isAuthEnabled } from "./api/config";
 import { getCurrentSession, subscribeAuthState, signOutUser } from "./api/supabaseClient";
 import AuthGateway from "./components/AuthGateway";
@@ -82,6 +85,8 @@ const navSections: { section: string; items: NavItemDef[] }[] = [
     section: "MARKET",
     items: [
       { name: "Overview", icon: "▦", section: "MARKET" },
+      { name: "NIFTY 50", icon: "📈", section: "MARKET", tag: "INDEX" },
+      { name: "Option Chain", icon: "⚡", section: "MARKET", tag: "FNO" },
       { name: "Market Intelligence", icon: "◫", section: "MARKET" },
       { name: "Market Movers", icon: "⇅", section: "MARKET", tag: "NEW" },
       { name: "Stock Scanner", icon: "⌕", section: "MARKET" },
@@ -399,23 +404,12 @@ function App() {
             <h1>{activePage}</h1>
           </div>
           <div className="topbar-right">
-            <form
-              className="topbar-search"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const symbol = search.trim().toUpperCase();
-                if (symbol) handleOpenChart(symbol);
-              }}
-            >
-              <span aria-hidden="true">⌕</span>
-              <input
-                aria-label="Search stocks"
-                placeholder="Search stocks"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+            <div style={{ width: "280px" }}>
+              <StockSearchAutocomplete
+                placeholder="Search full NSE stocks, F&O, ISIN..."
+                onSelect={(sym) => handleOpenChart(sym)}
               />
-              <kbd>↵</kbd>
-            </form>
+            </div>
             {(isRateLimited || isDisabled) && (
               <button
                 className="refresh-action-btn"
@@ -509,6 +503,17 @@ function App() {
             onNavigate={setActivePage}
             liveQuotes={liveQuotes}
           />
+        )}
+
+        {activePage === "NIFTY 50" && (
+          <Nifty50IndexView
+            onSelectStock={handleOpenChart}
+            liveQuotes={liveQuotes}
+          />
+        )}
+
+        {activePage === "Option Chain" && (
+          <NiftyOptionChainView onSelectContract={handleOpenChart} />
         )}
 
         {activePage === "Intraday Data Health" && <IntradayDataHealthView />}

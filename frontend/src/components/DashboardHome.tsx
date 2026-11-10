@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 
 
 import { apiJson } from "../api/client";
+import StockSearchAutocomplete from "./StockSearchAutocomplete";
 
 interface Stock {
   symbol: string;
@@ -214,11 +215,12 @@ export default function DashboardHome({ onSelectStock, onNavigate, liveQuotes = 
         </span>
       </section>
 
-      <form className="dashboard-search" onSubmit={submitSearch}>
-        <span aria-hidden="true">⌕</span>
-        <input aria-label="Search a stock symbol" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search a stock symbol, e.g. RELIANCE" />
-        <button type="submit">Open chart</button>
-      </form>
+      <div style={{ maxWidth: "560px", marginBottom: "20px" }}>
+        <StockSearchAutocomplete
+          placeholder="Search full NSE stocks, indices, F&O (e.g. RELIANCE, ETERNAL)..."
+          onSelect={(sym) => onSelectStock(sym)}
+        />
+      </div>
 
       {market && (
         <section className="dashboard-metrics">
@@ -228,7 +230,19 @@ export default function DashboardHome({ onSelectStock, onNavigate, liveQuotes = 
             const chg = q?.change_percent ?? index.change_pct;
             const mode = q?.source === "LIVE" ? "LIVE" : (index.status === "UNAVAILABLE" ? "UNAVAILABLE" : index.data_mode || dataMode);
             return (
-              <article className="index-card" key={index.symbol}>
+              <article
+                className="index-card"
+                key={index.symbol}
+                onClick={() => {
+                  if (index.name.includes("NIFTY 50") || index.name === "NIFTY") {
+                    onNavigate("NIFTY 50");
+                  } else {
+                    onSelectStock(index.symbol);
+                  }
+                }}
+                style={{ cursor: "pointer" }}
+                title={`Click to open ${index.name} analysis`}
+              >
                 <div className="card-top"><span>{index.name}</span><span className={`badge-demo ${mode === "LIVE" ? "is-live" : ""}`}>{mode}</span></div>
                 <div className="index-value">{val || "—"}</div>
                 <div className="index-bottom">

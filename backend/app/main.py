@@ -26,6 +26,7 @@ from app.routers import (
     market_intelligence,
     market_movers,
     money_flow,
+    options,
     scanner,
     screener,
     smc,
@@ -51,6 +52,12 @@ async def lifespan(app: FastAPI):
         ensure_full_universe_seeded()
     except Exception as e:
         logger.warning("Could not auto-seed full NSE universe on startup: %s", e)
+
+    try:
+        from app.services.nse_universe_service import sync_nse_instruments_master
+        sync_nse_instruments_master()
+    except Exception as e:
+        logger.warning("Could not sync NSE instruments master: %s", e)
 
     # Start Upstox live market feed background task only if enabled in config
     upstox_cfg = get_upstox_config()
@@ -152,5 +159,6 @@ app.include_router(scanner.router)
 app.include_router(market_intelligence.router)
 app.include_router(market_movers.router)
 app.include_router(money_flow.router)
+app.include_router(options.router)
 app.include_router(unified_research.router)
 app.include_router(instruments.router)

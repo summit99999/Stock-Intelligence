@@ -25,6 +25,14 @@ def stocks(
     return {"items": items, "total": len(items), "data_mode": "demo"}
 
 
+@router.get("/stocks/search")
+def search_stocks(q: str = "", limit: int = 15):
+    """Search full NSE universe (~3,400 instruments) by symbol, company name, or ISIN."""
+    from app.services.nse_universe_service import search_nse_universe
+    results = search_nse_universe(query=q, limit=limit)
+    return {"query": q, "count": len(results), "items": results}
+
+
 @router.get("/stocks/{symbol}")
 def stock_detail(symbol: str):
     """Get detailed info for a single stock."""

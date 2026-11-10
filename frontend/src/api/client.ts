@@ -74,11 +74,12 @@ export async function safeJsonParse<T>(response: Response, endpoint: string): Pr
       response.status === 504 ||
       text.includes("Render") ||
       text.includes("Cloudflare") ||
-      text.includes("Gateway");
+      text.includes("Gateway") ||
+      response.status === 200;
 
     throw new ApiError({
       message: isWarming
-        ? `Backend service is warming up (${endpoint}). Please wait 10-15 seconds and refresh.`
+        ? `Backend is spinning up on Render (${endpoint}). Please wait a moment.`
         : `Backend returned HTML instead of JSON for ${endpoint} (HTTP ${response.status}).`,
       status: response.status,
       statusText: response.statusText,
@@ -107,8 +108,9 @@ export async function safeJsonParse<T>(response: Response, endpoint: string): Pr
  * - Automatic URL normalization
  * - Safe .json() wrapping to prevent syntax crashes
  * - Explicit timeout and network failure classification
+ * - Automatic retry with delay for Render cold starts
  */
-export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(path: string, init?: RequestInit, retries: number = 2): Promise<Response> {
   const url = apiUrl(path);
   const headers = new Headers(init?.headers || {});
 
@@ -123,37 +125,55 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     headers.set("Content-Type", "application/json");
   }
 
-  try {
-    const response = await fetch(url, {
-      ...init,
-      headers,
-    });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers,
+      });
 
-    // Monkey-patch response.json() so calling it directly in any existing component
-    // goes through safeJsonParse rather than crashing with "Unexpected token '<'".
-    const originalJson = response.json.bind(response);
-    response.json = async function () {
-      try {
-        return await safeJsonParse(response.clone(), path);
-      } catch (err) {
-        if (err instanceof ApiError) {
-          throw err;
-        }
-        return originalJson();
+      // Check if response is a transient cold-start gateway error (502, 503, 504)
+      if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+        continue;
       }
-    };
 
-    return response;
-  } catch (netErr: any) {
-    if (netErr instanceof ApiError) {
-      throw netErr;
+      // Monkey-patch response.json() so calling it directly in any existing component
+      // goes through safeJsonParse rather than crashing with "Unexpected token '<'".
+      const originalJson = response.json.bind(response);
+      response.json = async function () {
+        try {
+          return await safeJsonParse(response.clone(), path);
+        } catch (err) {
+          if (err instanceof ApiError) {
+            throw err;
+          }
+          return originalJson();
+        }
+      };
+
+      return response;
+    } catch (netErr: any) {
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+        continue;
+      }
+      if (netErr instanceof ApiError) {
+        throw netErr;
+      }
+      throw new ApiError({
+        message: `Network error connecting to ${path}: ${netErr?.message || "Connection failed"}. Check your connection or backend status.`,
+        endpoint: path,
+        isNetworkError: true,
+      });
     }
-    throw new ApiError({
-      message: `Network error connecting to ${path}: ${netErr?.message || "Connection failed"}. Check your connection or backend status.`,
-      endpoint: path,
-      isNetworkError: true,
-    });
   }
+
+  throw new ApiError({
+    message: `Backend service is warming up (${path}). Please wait a few seconds and refresh.`,
+    endpoint: path,
+    isWarmup: true,
+  });
 }
 
 /**

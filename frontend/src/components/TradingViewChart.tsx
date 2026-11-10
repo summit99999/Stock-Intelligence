@@ -10,6 +10,7 @@ import {
   IChartApi,
   ISeriesApi,
   Time,
+  UTCTimestamp,
   LineStyle,
   createSeriesMarkers,
 } from "lightweight-charts";
@@ -121,19 +122,36 @@ export default function TradingViewChart({
 
         setAnalysisData(data);
 
-        // Normalize bars
+        // Normalize bars with exact timeframe resolution
         const rawBars: CandleBar[] = data.bars || [];
-        const uniqueMap = new Map<string, CandleBar>();
+        const isIntraday = !["1D", "1W", "1M", "D", "W", "M"].includes(timeframe);
+        const uniqueMap = new Map<string | number, CandleBar>();
+
         for (const b of rawBars) {
           const rawDate = b.date || b.timestamp || "";
-          const dateKey = rawDate.split("T")[0];
-          if (dateKey && b.open != null && b.close != null) {
-            uniqueMap.set(dateKey, { ...b, timestamp: dateKey });
+          if (!rawDate || b.open == null || b.close == null) continue;
+
+          let formattedTime: Time;
+          if (isIntraday) {
+            let ms = Date.parse(rawDate);
+            if (isNaN(ms) && !rawDate.includes("+") && !rawDate.endsWith("Z")) {
+              ms = Date.parse(`${rawDate}+05:30`);
+            }
+            if (isNaN(ms)) continue;
+            formattedTime = Math.floor(ms / 1000) as UTCTimestamp;
+          } else {
+            formattedTime = rawDate.split("T")[0] as Time;
           }
+
+          uniqueMap.set(formattedTime as any, { ...b, timestamp: formattedTime as any });
         }
-        const sorted = Array.from(uniqueMap.values()).sort((a, b) =>
-          (a.timestamp || "").localeCompare(b.timestamp || "")
-        );
+
+        const sorted = Array.from(uniqueMap.values()).sort((a, b) => {
+          if (typeof a.timestamp === "number" && typeof b.timestamp === "number") {
+            return a.timestamp - b.timestamp;
+          }
+          return String(a.timestamp || "").localeCompare(String(b.timestamp || ""));
+        });
 
         setBars(sorted);
         if (sorted.length > 0) {
@@ -350,6 +368,7 @@ export default function TradingViewChart({
     if (ts && ts.dates) {
       const dates: string[] = ts.dates;
 
+      const isIntraday = !["1D", "1W", "1M", "D", "W", "M"].includes(timeframe);
       const buildLineData = (values: (number | null)[]) => {
         if (!values) return [];
         const res: { time: Time; value: number }[] = [];
@@ -357,7 +376,18 @@ export default function TradingViewChart({
           const val = values[i];
           const d = dates[i];
           if (val != null && d) {
-            res.push({ time: d.split("T")[0] as Time, value: val });
+            let formattedTime: Time;
+            if (isIntraday) {
+              let ms = Date.parse(d);
+              if (isNaN(ms) && !d.includes("+") && !d.endsWith("Z")) {
+                ms = Date.parse(`${d}+05:30`);
+              }
+              if (isNaN(ms)) continue;
+              formattedTime = Math.floor(ms / 1000) as UTCTimestamp;
+            } else {
+              formattedTime = d.split("T")[0] as Time;
+            }
+            res.push({ time: formattedTime, value: val });
           }
         }
         return res;
@@ -836,8 +866,8 @@ export default function TradingViewChart({
           </div>
 
           {/* Timeframe Selector */}
-          <div style={{ display: "flex", background: "#06090e", borderRadius: "6px", padding: "2px" }}>
-            {["1m", "5m", "15m", "1h", "4h", "1D", "1W"].map((tf) => (
+          <div style={{ display: "flex", background: "#06090e", borderRadius: "6px", padding: "2px", flexWrap: "wrap", gap: "2px" }}>
+            {["1m", "2m", "3m", "5m", "10m", "15m", "30m", "60m", "1D", "1W", "1M"].map((tf) => (
               <button
                 key={tf}
                 onClick={() => setTimeframe(tf)}
@@ -856,6 +886,35 @@ export default function TradingViewChart({
               </button>
             ))}
           </div>
+
+          {/* TradingView Deep Link Button */}
+          <a
+            href={
+              symbol.toUpperCase().includes("NIFTY 50") || symbol.toUpperCase() === "NIFTY"
+                ? "https://www.tradingview.com/chart/?symbol=NSE%3ANIFTY"
+                : symbol.toUpperCase().includes("BANK")
+                ? "https://www.tradingview.com/chart/?symbol=NSE%3ABANKNIFTY"
+                : `https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(symbol.toUpperCase())}`
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: "11px",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              background: "#131c2a",
+              color: "#38bdf8",
+              border: "1px solid #1e2c40",
+              fontWeight: 600,
+              textDecoration: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+            title="Open official chart on TradingView"
+          >
+            TradingView ↗
+          </a>
 
           {/* Data Mode & Exchange Badge */}
           <span
