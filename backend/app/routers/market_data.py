@@ -226,3 +226,71 @@ def stock_indicators(symbol: str):
             else "Indicators calculated from demonstration data."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Canonical Market Quotes & Discrepancy Monitor (Phase 7A)
+# ---------------------------------------------------------------------------
+
+@router.get("/market/quote/{symbol}")
+def get_canonical_quote_endpoint(symbol: str, exchange: str = "NSE"):
+    """
+    Get canonical market data quote for a single instrument with full audit metadata.
+    Single Source of Truth across all platform components.
+    """
+    from app.services.canonical_market_data_service import get_canonical_market_data_service
+    svc = get_canonical_market_data_service()
+    quote = svc.get_quote(symbol, exchange=exchange)
+    svc.sync_to_stocks_table(quote)
+    return quote
+
+
+@router.get("/market/quotes")
+def get_canonical_quotes_batch(symbols: str = "", exchange: str = "NSE"):
+    """
+    Get canonical quotes for multiple comma-separated symbols.
+    Example: /api/market/quotes?symbols=RELIANCE,TCS,ETERNAL
+    """
+    from app.services.canonical_market_data_service import get_canonical_market_data_service
+    svc = get_canonical_market_data_service()
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not sym_list:
+        from app.database import get_all_symbols
+        sym_list = get_all_symbols()[:30]
+
+    quotes = svc.get_quotes_batch(sym_list, exchange=exchange)
+    for q in quotes.values():
+        svc.sync_to_stocks_table(q)
+
+    return {
+        "count": len(quotes),
+        "exchange": exchange.upper(),
+        "quotes": quotes,
+    }
+
+
+@router.get("/market/discrepancy/{symbol}")
+def get_quote_discrepancy(symbol: str):
+    """
+    Audit discrepancy monitor comparing canonical quote against database and provider feeds.
+    """
+    from app.services.canonical_market_data_service import get_canonical_market_data_service
+    return get_canonical_market_data_service().compare_providers(symbol)
+
+
+@router.get("/market/history/{exchange}/{symbol}")
+def get_exchange_stock_history(exchange: str, symbol: str, interval: str = "1d", limit: int = 300):
+    """
+    Official multi-timeframe exchange history endpoint:
+    Supports: 1m, 3m, 5m, 15m, 30m, 1h, 1d, 1w, 1M.
+    """
+    from app.services.candle_service import get_multi_timeframe_bars
+    bars = get_multi_timeframe_bars(symbol=symbol.upper(), timeframe=interval)
+    sliced = bars[-limit:] if bars else []
+    return {
+        "symbol": symbol.upper(),
+        "exchange": exchange.upper(),
+        "interval": interval,
+        "count": len(sliced),
+        "bars": sliced,
+    }

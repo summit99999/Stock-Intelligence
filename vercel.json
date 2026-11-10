@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://stock-intelligence-api-2esm.onrender.com/api/:path*"
+    },
+    {
+      "source": "/ws/:path*",
+      "destination": "https://stock-intelligence-api-2esm.onrender.com/ws/:path*"
+    }
+  ]
+}

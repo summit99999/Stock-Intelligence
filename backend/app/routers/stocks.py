@@ -35,18 +35,28 @@ def search_stocks(q: str = "", limit: int = 15):
 
 @router.get("/stocks/{symbol}")
 def stock_detail(symbol: str):
-    """Get detailed info for a single stock."""
-    item = get_stock(symbol.upper())
+    """Get detailed info for a single stock with canonical price guarantees."""
+    sym_upper = symbol.upper()
+    item = get_stock(sym_upper)
     if not item:
         raise HTTPException(status_code=404, detail="Stock not found")
-    bars = get_bars(symbol.upper())
+
+    from app.services.canonical_market_data_service import get_canonical_market_data_service
+    canonical = get_canonical_market_data_service().get_quote(sym_upper)
+    item["close"] = canonical["ltp"]
+    item["daily_change_pct"] = canonical["change_pct"]
+    item["volume"] = canonical["volume"]
+    item["data_source"] = canonical["data_source"]
+
+    bars = get_bars(sym_upper)
     indicators = calculate_all_indicators(bars) if bars else {"message": "No OHLCV data"}
     return {
         "stock": item,
+        "canonical_quote": canonical,
         "bars": bars[-30:] if bars else [],   # last 30 bars for quick view
         "indicators": indicators,
-        "data_source": item.get("data_source", "demo"),
-        "data_mode": item.get("data_source", "demo"),
+        "data_source": canonical["data_source"],
+        "data_mode": canonical["data_status"],
     }
 
 
