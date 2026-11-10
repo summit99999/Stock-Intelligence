@@ -108,6 +108,16 @@ def get_stock_advanced_analysis(
     sym = symbol.upper()
     stock_meta = get_stock(sym)
     if not stock_meta:
+        try:
+            from app.services.upstox_instrument_sync import ondemand_ingest_stock, resolve_symbol_alias
+            resolved = resolve_symbol_alias(sym)
+            stock_meta = get_stock(resolved) or ondemand_ingest_stock(resolved)
+            if stock_meta:
+                sym = resolved
+        except Exception:
+            pass
+
+    if not stock_meta:
         raise HTTPException(status_code=404, detail=f"Stock '{sym}' not found.")
 
     bars = get_bars(sym)

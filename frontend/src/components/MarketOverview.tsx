@@ -1,4 +1,4 @@
-import { apiFetch } from "../api/client";
+import { apiFetch, apiJson } from "../api/client";
 import React, { useState, useEffect, useMemo } from "react";
 import { LiveQuote } from "../api/marketFeed";
 import MarketMoversConfluenceView from "./MarketMoversConfluenceView";
@@ -125,21 +125,11 @@ export default function MarketOverview({ liveQuotes = {}, onSelectStock }: Marke
     setDashboard(null);
     setSectors([]);
     try {
-      const [dashRes, secRes] = await Promise.all([
-        apiFetch(`/api/market/intelligence/dashboard?universe=${universe}&force_refresh=${force}`),
-        apiFetch(`/api/market/intelligence/sectors?universe=${universe}&force_refresh=${force}`),
+      const [d, s] = await Promise.all([
+        apiJson<any>(`/api/market/intelligence/dashboard?universe=${universe}&force_refresh=${force}`),
+        apiJson<any>(`/api/market/intelligence/sectors?universe=${universe}&force_refresh=${force}`),
       ]);
 
-      if (!dashRes.ok) throw new Error(`Market overview API returned HTTP ${dashRes.status}.`);
-      if (!secRes.ok) throw new Error(`Sector intelligence API returned HTTP ${secRes.status}.`);
-
-      const dashType = dashRes.headers.get("content-type") || "";
-      const secType = secRes.headers.get("content-type") || "";
-      if (!dashType.includes("application/json") || !secType.includes("application/json")) {
-        throw new Error("Backend server is starting up. Please wait 10 seconds and refresh.");
-      }
-
-      const [d, s] = await Promise.all([dashRes.json(), secRes.json()]);
       setDashboard(d);
       setSectors(s.sectors || []);
     } catch (err) {

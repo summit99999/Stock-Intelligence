@@ -239,11 +239,44 @@ def _pct_return(close: pd.Series, days: int) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
-# RSI — Wilder's smoothing
+# Wilder's Smoothing (ta.rma) - Exact TradingView Pine Script Parity
+# ---------------------------------------------------------------------------
+
+def calculate_rma(series: pd.Series, length: int) -> pd.Series:
+    """
+    Calculate Wilder's smoothed moving average (ta.rma) identical to TradingView Pine Script.
+    - Bars 0 .. length-2 are NaN
+    - Bar length-1 is seeded with the Simple Moving Average (SMA) of the first length bars
+    - All subsequent bars: RMA[i] = alpha * series[i] + (1 - alpha) * RMA[i-1] where alpha = 1 / length
+    """
+    if len(series) < length:
+        return pd.Series(np.nan, index=series.index)
+
+    values = series.to_numpy(dtype=float)
+    rma = np.full(len(values), np.nan)
+    rma[length - 1] = np.nanmean(values[:length])
+    alpha = 1.0 / length
+    one_minus_alpha = 1.0 - alpha
+
+    for i in range(length, len(values)):
+        v = values[i]
+        p = rma[i - 1]
+        if np.isnan(p):
+            rma[i] = v
+        elif np.isnan(v):
+            rma[i] = p
+        else:
+            rma[i] = alpha * v + one_minus_alpha * p
+
+    return pd.Series(rma, index=series.index)
+
+
+# ---------------------------------------------------------------------------
+# RSI — Wilder's smoothing (TradingView Pine Script Parity)
 # ---------------------------------------------------------------------------
 
 def _rsi_series(close: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate full RSI series using Wilder's smoothing method."""
+    """Calculate full RSI series using exact TradingView Wilder's smoothing method."""
     if len(close) < period + 1:
         return pd.Series(dtype=float)
 
@@ -251,12 +284,13 @@ def _rsi_series(close: pd.Series, period: int = 14) -> pd.Series:
     gain = delta.clip(lower=0)
     loss = (-delta.clip(upper=0))
 
-    # Wilder's smoothing: use ewm with alpha=1/period
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_gain = calculate_rma(gain, period)
+    avg_loss = calculate_rma(loss, period)
 
     rs = avg_gain / avg_loss.replace(0, np.nan)
-    rsi = 100 - 100 / (1 + rs)
+    rsi = 100.0 - 100.0 / (1.0 + rs)
+    rsi[(avg_loss == 0) & (avg_gain > 0)] = 100.0
+    rsi[(avg_loss == 0) & (avg_gain == 0)] = 50.0
     return rsi
 
 
@@ -347,23 +381,30 @@ def _adx(
 
 
 # ---------------------------------------------------------------------------
-# ATR (Average True Range)
+# ATR (Average True Range) - TradingView Wilder's RMA Parity
 # ---------------------------------------------------------------------------
 
-def _atr(
+def _atr_series(
     high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
-) -> Optional[float]:
-    """Calculate Average True Range using Wilder's smoothing."""
+) -> pd.Series:
+    """Calculate Average True Range series using exact TradingView Wilder's smoothing."""
     if len(close) < period + 1:
-        return None
+        return pd.Series(np.nan, index=close.index)
 
     tr1 = high - low
     tr2 = (high - close.shift(1)).abs()
     tr3 = (low - close.shift(1)).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    return _last_val(atr)
+    return calculate_rma(tr, period)
+
+
+def _atr(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+) -> Optional[float]:
+    """Calculate Average True Range scalar using Wilder's smoothing."""
+    atr_s = _atr_series(high, low, close, period)
+    return _last_val(atr_s)
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +697,7 @@ def _cci(
 
 
 # ---------------------------------------------------------------------------
-# Supertrend
+# Supertrend - TradingView Pine Script ta.supertrend Parity
 # ---------------------------------------------------------------------------
 
 def _supertrend(
@@ -667,57 +708,64 @@ def _supertrend(
     multiplier: float = 3.0,
 ) -> tuple[Optional[float], Optional[str]]:
     """
-    Calculate Supertrend indicator.
+    Calculate Supertrend indicator using exact TradingView Pine Script ta.supertrend() logic.
     Returns (value, direction) where direction is 'up' or 'down'.
     """
     n = len(close)
     if n < period + 1:
         return None, None
 
-    # ATR
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = tr.rolling(period).mean()
+    # Exact Wilder's RMA ATR as defined in TradingView ta.atr()
+    atr = _atr_series(high, low, close, period)
 
-    hl2 = (high + low) / 2
-    upper_band = hl2 + multiplier * atr
-    lower_band = hl2 - multiplier * atr
+    hl2 = (high + low) / 2.0
+    basic_upper = hl2 + multiplier * atr
+    basic_lower = hl2 - multiplier * atr
 
-    supertrend = pd.Series(np.nan, index=close.index)
-    direction = pd.Series(1, index=close.index)  # 1 = up, -1 = down
+    final_upper = np.zeros(n)
+    final_lower = np.zeros(n)
+    supertrend = np.full(n, np.nan)
+    direction = np.ones(n, dtype=int)  # 1 = up (bullish), -1 = down (bearish)
+
+    c_vals = close.to_numpy(dtype=float)
+    bu_vals = basic_upper.to_numpy(dtype=float)
+    bl_vals = basic_lower.to_numpy(dtype=float)
 
     for i in range(period, n):
-        if pd.isna(upper_band.iloc[i]):
+        if np.isnan(bu_vals[i]) or np.isnan(bl_vals[i]):
             continue
 
-        if i == period:
-            supertrend.iloc[i] = upper_band.iloc[i]
-            direction.iloc[i] = -1
-            continue
+        # Trailing lower band
+        if bl_vals[i] > final_lower[i - 1] or c_vals[i - 1] < final_lower[i - 1]:
+            final_lower[i] = bl_vals[i]
+        else:
+            final_lower[i] = final_lower[i - 1]
 
-        # Previous supertrend
-        prev_st = supertrend.iloc[i - 1]
-        prev_dir = direction.iloc[i - 1]
+        # Trailing upper band
+        if bu_vals[i] < final_upper[i - 1] or c_vals[i - 1] > final_upper[i - 1]:
+            final_upper[i] = bu_vals[i]
+        else:
+            final_upper[i] = final_upper[i - 1]
 
-        if prev_dir == 1:  # was bullish
-            if close.iloc[i] > prev_st:
-                supertrend.iloc[i] = max(lower_band.iloc[i], prev_st)
-                direction.iloc[i] = 1
+        # Direction flip logic
+        prev_dir = direction[i - 1]
+        if prev_dir == 1:
+            if c_vals[i] < final_lower[i]:
+                direction[i] = -1
+                supertrend[i] = final_upper[i]
             else:
-                supertrend.iloc[i] = upper_band.iloc[i]
-                direction.iloc[i] = -1
-        else:  # was bearish
-            if close.iloc[i] < prev_st:
-                supertrend.iloc[i] = min(upper_band.iloc[i], prev_st)
-                direction.iloc[i] = -1
+                direction[i] = 1
+                supertrend[i] = final_lower[i]
+        else:
+            if c_vals[i] > final_upper[i]:
+                direction[i] = 1
+                supertrend[i] = final_lower[i]
             else:
-                supertrend.iloc[i] = lower_band.iloc[i]
-                direction.iloc[i] = 1
+                direction[i] = -1
+                supertrend[i] = final_upper[i]
 
-    last_st = _round(supertrend.iloc[-1])
-    last_dir = "up" if direction.iloc[-1] == 1 else "down"
+    last_st = _round(supertrend[-1])
+    last_dir = "up" if direction[-1] == 1 else "down"
 
     return last_st, last_dir if last_st is not None else None
 

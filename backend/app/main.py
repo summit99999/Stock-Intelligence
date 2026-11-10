@@ -45,6 +45,13 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database (mode: %s)...", get_database_mode())
     init_db()
 
+    # Populate verified NSE equity universe with official Upstox metadata & candles
+    try:
+        from app.services.upstox_instrument_sync import ensure_full_universe_seeded
+        ensure_full_universe_seeded()
+    except Exception as e:
+        logger.warning("Could not auto-seed full NSE universe on startup: %s", e)
+
     # Start Upstox live market feed background task only if enabled in config
     upstox_cfg = get_upstox_config()
     if upstox_cfg.live_data_enabled:

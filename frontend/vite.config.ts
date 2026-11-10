@@ -5,9 +5,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
     plugins: [react()],
-    envPrefix: ["VITE_", "NEXT_PUBLIC_", "PUBLIC_"],
+    envPrefix: ["VITE_", "NEXT_PUBLIC_", "PUBLIC_", "API_"],
     define: {
-      "import.meta.env.API_BASE_URL": JSON.stringify(env.API_BASE_URL || env.VITE_API_BASE_URL || ""),
+      "import.meta.env.API_BASE_URL": JSON.stringify(env.API_BASE_URL || env.VITE_API_BASE_URL || env.VITE_API_URL || env.API_URL || ""),
+      "import.meta.env.VITE_API_URL": JSON.stringify(env.VITE_API_URL || env.API_URL || env.VITE_API_BASE_URL || env.API_BASE_URL || ""),
     },
     resolve: {
       preserveSymlinks: true,

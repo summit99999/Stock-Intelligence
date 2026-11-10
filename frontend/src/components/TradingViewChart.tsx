@@ -164,25 +164,25 @@ export default function TradingViewChart({
       width: chartContainerRef.current.clientWidth,
       height: chartHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#0a0f18" },
-        textColor: "#8c9bb0",
+        background: { type: ColorType.Solid, color: "#000000" },
+        textColor: "#94a3b8",
       },
       grid: {
-        vertLines: { color: "#16202e", style: 1 },
-        horzLines: { color: "#16202e", style: 1 },
+        vertLines: { color: "#171717", style: 1 },
+        horzLines: { color: "#171717", style: 1 },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#2d3f58", width: 1, style: 2 },
-        horzLine: { color: "#2d3f58", width: 1, style: 2 },
+        vertLine: { color: "#334155", width: 1, style: 2 },
+        horzLine: { color: "#334155", width: 1, style: 2 },
       },
       timeScale: {
-        borderColor: "#1e2c40",
+        borderColor: "#171717",
         timeVisible: true,
         secondsVisible: false,
       },
       rightPriceScale: {
-        borderColor: "#1e2c40",
+        borderColor: "#171717",
         scaleMargins: {
           top: 0.08,
           bottom: 0.22,
@@ -191,13 +191,15 @@ export default function TradingViewChart({
     });
     chartRef.current = chart;
 
-    // Candlesticks
+    // Candlesticks - Standard Pitch Black / Bullish #26A69A / Bearish #EF5350
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      upColor: "#26A69A",
+      downColor: "#EF5350",
+      borderVisible: true,
+      borderUpColor: "#26A69A",
+      borderDownColor: "#EF5350",
+      wickUpColor: "#26A69A",
+      wickDownColor: "#EF5350",
     });
     candleSeriesRef.current = candleSeries;
 
@@ -337,7 +339,7 @@ export default function TradingViewChart({
       const volumeData = bars.map((b) => ({
         time: (b.timestamp || "") as Time,
         value: b.volume || 0,
-        color: b.close >= b.open ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.35)",
+        color: b.close >= b.open ? "rgba(38, 166, 154, 0.45)" : "rgba(239, 83, 80, 0.45)",
       }));
       volumeSeriesRef.current.setData(volumeData);
     } else {
@@ -718,8 +720,8 @@ export default function TradingViewChart({
       style={{
         display: "flex",
         flexDirection: "column",
-        background: "#0a0f18",
-        border: "1px solid #1e2c40",
+        background: "#000000",
+        border: "1px solid #171717",
         borderRadius: "12px",
         overflow: "hidden",
         position: isFullscreen ? "fixed" : "relative",
@@ -739,8 +741,8 @@ export default function TradingViewChart({
           flexWrap: "wrap",
           gap: "10px",
           padding: "10px 16px",
-          background: "#0e1622",
-          borderBottom: "1px solid #1e2c40",
+          background: "#080808",
+          borderBottom: "1px solid #171717",
         }}
       >
         {/* Left: Symbol & Timeframe & Quote */}

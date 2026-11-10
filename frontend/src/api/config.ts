@@ -12,9 +12,11 @@ const DEFAULT_PROD_API_BASE = "https://stock-intelligence-api-2esm.onrender.com"
 export function getApiBaseUrl(): string {
   const envUrl =
     import.meta.env.VITE_API_BASE_URL ||
+    (import.meta.env as any).VITE_API_URL ||
+    (import.meta.env as any).API_BASE_URL ||
+    (import.meta.env as any).API_URL ||
     (import.meta.env as any).NEXT_PUBLIC_API_BASE_URL ||
-    (import.meta.env as any).REACT_APP_API_BASE_URL ||
-    (import.meta.env as any).API_BASE_URL;
+    (import.meta.env as any).REACT_APP_API_BASE_URL;
 
   if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
     return envUrl.trim().replace(/\/+$/, "");
