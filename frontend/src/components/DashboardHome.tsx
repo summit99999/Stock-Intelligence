@@ -85,6 +85,7 @@ interface AlertEvent {
 interface DashboardHomeProps {
   onSelectStock: (symbol: string) => void;
   onNavigate: (page: string) => void;
+  liveQuotes?: Record<string, any>;
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -102,11 +103,13 @@ function StockTable({
   onSelectStock,
   label,
   metricLabel = "RVOL",
+  liveQuotes = {},
 }: {
   stocks: Stock[];
   onSelectStock: (symbol: string) => void;
   label: string;
   metricLabel?: "RVOL" | "RS VS MKT";
+  liveQuotes?: Record<string, any>;
 }) {
   if (stocks.length === 0) return <EmptyState reason={label} />;
   return (
@@ -116,25 +119,30 @@ function StockTable({
           <tr><th>STOCK</th><th>PRICE</th><th>CHANGE</th><th>{metricLabel}</th></tr>
         </thead>
         <tbody>
-          {stocks.slice(0, 5).map((stock) => (
-            <tr key={stock.symbol} onClick={() => onSelectStock(stock.symbol)} className="dashboard-stock-row">
-              <td><strong>{stock.symbol}</strong><small>{stock.company_name || stock.sector || "Equity"}</small></td>
-              <td>{stock.close == null ? "—" : `₹${stock.close.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}</td>
-              <td className={(stock.daily_change_pct ?? 0) >= 0 ? "positive" : "negative"}>
-                {stock.daily_change_pct == null ? "—" : `${stock.daily_change_pct > 0 ? "+" : ""}${stock.daily_change_pct.toFixed(2)}%`}
-              </td>
-              <td>{metricLabel === "RS VS MKT"
-                ? stock.relative_strength_vs_market == null ? "—" : `${stock.relative_strength_vs_market > 0 ? "+" : ""}${stock.relative_strength_vs_market.toFixed(2)}%`
-                : stock.relative_volume == null ? "—" : `${stock.relative_volume.toFixed(2)}x`}</td>
-            </tr>
-          ))}
+          {stocks.slice(0, 5).map((stock) => {
+            const q = liveQuotes[stock.symbol];
+            const price = q?.ltp ?? stock.close;
+            const chgPct = q?.change_percent ?? stock.daily_change_pct;
+            return (
+              <tr key={stock.symbol} onClick={() => onSelectStock(stock.symbol)} className="dashboard-stock-row">
+                <td><strong>{stock.symbol}</strong><small>{stock.company_name || stock.sector || "Equity"}</small></td>
+                <td>{price == null ? "—" : `₹${price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}</td>
+                <td className={(chgPct ?? 0) >= 0 ? "positive" : "negative"}>
+                  {chgPct == null ? "—" : `${chgPct > 0 ? "+" : ""}${chgPct.toFixed(2)}%`}
+                </td>
+                <td>{metricLabel === "RS VS MKT"
+                  ? stock.relative_strength_vs_market == null ? "—" : `${stock.relative_strength_vs_market > 0 ? "+" : ""}${stock.relative_strength_vs_market.toFixed(2)}%`
+                  : stock.relative_volume == null ? "—" : `${stock.relative_volume.toFixed(2)}x`}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-export default function DashboardHome({ onSelectStock, onNavigate }: DashboardHomeProps) {
+export default function DashboardHome({ onSelectStock, onNavigate, liveQuotes = {} }: DashboardHomeProps) {
   const [market, setMarket] = useState<MarketDashboard | null>(null);
   const [sectorData, setSectorData] = useState<SectorData | null>(null);
   const [flow, setFlow] = useState<MoneyFlowData | null>(null);
@@ -214,17 +222,23 @@ export default function DashboardHome({ onSelectStock, onNavigate }: DashboardHo
 
       {market && (
         <section className="dashboard-metrics">
-          {(market.indices || []).map((index) => (
-            <article className="index-card" key={index.symbol}>
-              <div className="card-top"><span>{index.name}</span><span className="badge-demo">{index.status === "UNAVAILABLE" ? "UNAVAILABLE" : index.data_mode || dataMode}</span></div>
-              <div className="index-value">{index.value || "—"}</div>
-              <div className="index-bottom">
-                <span className={index.change_pct == null ? "" : index.change_pct >= 0 ? "positive" : "negative"}>
-                  {index.change_pct == null ? "Change unavailable" : `${index.change_pct > 0 ? "+" : ""}${index.change_pct.toFixed(2)}%`}
-                </span>
-              </div>
-            </article>
-          ))}
+          {(market.indices || []).map((index) => {
+            const q = liveQuotes[index.name] || liveQuotes[index.name.replace(" 50", "")];
+            const val = q?.ltp ? `₹${q.ltp.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : index.value;
+            const chg = q?.change_percent ?? index.change_pct;
+            const mode = q?.source === "LIVE" ? "LIVE" : (index.status === "UNAVAILABLE" ? "UNAVAILABLE" : index.data_mode || dataMode);
+            return (
+              <article className="index-card" key={index.symbol}>
+                <div className="card-top"><span>{index.name}</span><span className={`badge-demo ${mode === "LIVE" ? "is-live" : ""}`}>{mode}</span></div>
+                <div className="index-value">{val || "—"}</div>
+                <div className="index-bottom">
+                  <span className={chg == null ? "" : chg >= 0 ? "positive" : "negative"}>
+                    {chg == null ? "Change unavailable" : `${chg > 0 ? "+" : ""}${chg.toFixed(2)}%`}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
           {market.indices?.length === 0 && <EmptyState reason="No benchmark index data is available from the market intelligence service." />}
         </section>
       )}
@@ -273,23 +287,23 @@ export default function DashboardHome({ onSelectStock, onNavigate }: DashboardHo
       <section className="content-grid dashboard-lists-grid">
         <article className="panel">
           <div className="panel-heading"><div><h3>Top gainers</h3><p>Market intelligence · tracked universe</p></div><button className="text-action" onClick={() => onNavigate("Market Movers")}>Confluence View →</button></div>
-          <StockTable stocks={market?.leaders?.gainers || []} onSelectStock={onSelectStock} label={errors["Market overview"] || (loading ? "Loading gainers…" : "No gainers returned for this universe.")} />
+          <StockTable stocks={market?.leaders?.gainers || []} onSelectStock={onSelectStock} label={errors["Market overview"] || (loading ? "Loading gainers…" : "No gainers returned for this universe.")} liveQuotes={liveQuotes} />
         </article>
         <article className="panel">
           <div className="panel-heading"><div><h3>Top losers</h3><p>Market intelligence · tracked universe</p></div></div>
-          <StockTable stocks={market?.leaders?.losers || []} onSelectStock={onSelectStock} label={errors["Market overview"] || (loading ? "Loading losers…" : "No losers returned for this universe.")} />
+          <StockTable stocks={market?.leaders?.losers || []} onSelectStock={onSelectStock} label={errors["Market overview"] || (loading ? "Loading losers…" : "No losers returned for this universe.")} liveQuotes={liveQuotes} />
         </article>
         <article className="panel">
           <div className="panel-heading"><div><h3>High volume</h3><p>Ranked by relative volume</p></div></div>
-          <StockTable stocks={market?.leaders?.volume_surge || []} onSelectStock={onSelectStock} label={errors["Market overview"] || (loading ? "Loading volume leaders…" : "No high-volume stocks returned.")} />
+          <StockTable stocks={market?.leaders?.volume_surge || []} onSelectStock={onSelectStock} label={errors["Market overview"] || (loading ? "Loading volume leaders…" : "No high-volume stocks returned.")} liveQuotes={liveQuotes} />
         </article>
         <article className="panel">
           <div className="panel-heading"><div><h3>Breakout candidates</h3><p>Research discovery · bullish setup score ≥ 60</p></div></div>
-          <StockTable stocks={setups} onSelectStock={onSelectStock} label={errors["Breakout candidates"] || (loading ? "Loading candidates…" : "No candidates met the requested setup threshold.")} />
+          <StockTable stocks={setups} onSelectStock={onSelectStock} label={errors["Breakout candidates"] || (loading ? "Loading candidates…" : "No candidates met the requested setup threshold.")} liveQuotes={liveQuotes} />
         </article>
         <article className="panel">
           <div className="panel-heading"><div><h3>Relative strength leaders</h3><p>Leading stock within each strongest sector</p></div></div>
-          <StockTable stocks={relativeStrengthStocks} onSelectStock={onSelectStock} label={errors["Sector data"] || (loading ? "Loading relative strength…" : "No sector leaders are currently available.")} metricLabel="RS VS MKT" />
+          <StockTable stocks={relativeStrengthStocks} onSelectStock={onSelectStock} label={errors["Sector data"] || (loading ? "Loading relative strength…" : "No sector leaders are currently available.")} metricLabel="RS VS MKT" liveQuotes={liveQuotes} />
         </article>
       </section>
 

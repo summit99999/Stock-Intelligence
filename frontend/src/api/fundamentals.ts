@@ -7,53 +7,38 @@ import type {
   QualityScoreResult,
   ScreenerCsvImportResponse,
 } from "../types/fundamentals";
-import { apiFetch as baseApiFetch } from "./client";
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await baseApiFetch(path, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
-  return res.json();
-}
+import { apiJson, apiFetch } from "./client";
 
 /** Get full research dossier for a company. */
 export async function fetchCompanyResearch(symbol: string): Promise<CompanyResearchDossier> {
-  return apiFetch<CompanyResearchDossier>(`/api/fundamentals/company/${symbol.toUpperCase()}/research`);
+  return apiJson<CompanyResearchDossier>(`/api/fundamentals/company/${symbol.toUpperCase()}/research`);
 }
 
-/** Get calculated financial ratios (CAGRs, ROE/ROCE, valuation). */
+/** Get calculated financial ratios for a company. */
 export async function fetchCalculatedRatios(
   symbol: string,
   statementType = "consolidated"
 ): Promise<CalculatedRatiosResult> {
-  return apiFetch<CalculatedRatiosResult>(
-    `/api/fundamentals/company/${symbol.toUpperCase()}/calculated-ratios?statement_type=${statementType}`
+  return apiJson<CalculatedRatiosResult>(
+    `/api/fundamentals/company/${symbol.toUpperCase()}/ratios/calculated?statement_type=${statementType}`
   );
 }
 
-/** Get 100-point fundamental quality score & deduction audit. */
+/** Get 100-point institutional quality score for a company. */
 export async function fetchQualityScore(symbol: string): Promise<QualityScoreResult> {
-  return apiFetch<QualityScoreResult>(`/api/fundamentals/company/${symbol.toUpperCase()}/quality-score`);
+  return apiJson<QualityScoreResult>(`/api/fundamentals/company/${symbol.toUpperCase()}/scoring/quality-score`);
 }
 
-/** Compare 2 to 5 peers side-by-side. */
-export async function comparePeers(
+/** Get peer comparison matrix. */
+export async function fetchPeerComparison(
   symbols: string[],
-  targetSymbol?: string,
-  statementType = "consolidated"
+  targetSymbol?: string
 ): Promise<PeerComparisonResponse> {
-  return apiFetch<PeerComparisonResponse>("/api/fundamentals/peers/compare", {
+  const target = targetSymbol || symbols[0] || "TCS";
+  return apiJson<PeerComparisonResponse>("/api/fundamentals/peers/compare", {
     method: "POST",
-    body: JSON.stringify({
-      symbols,
-      target_symbol: targetSymbol,
-      statement_type: statementType,
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbols, target_symbol: target }),
   });
 }
 
@@ -70,7 +55,7 @@ export async function importScreenerCsv(
 
   let res: Response;
   if (typeof fileOrContent === "string") {
-    res = await baseApiFetch(path, {
+    res = await apiFetch(path, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: fileOrContent,
@@ -80,7 +65,7 @@ export async function importScreenerCsv(
     formData.append("file", fileOrContent);
     if (symbol) formData.append("symbol", symbol.toUpperCase());
     formData.append("overwrite_verified", String(overwriteVerified));
-    res = await baseApiFetch(path, {
+    res = await apiFetch(path, {
       method: "POST",
       body: formData,
     });

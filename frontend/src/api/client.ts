@@ -2,6 +2,42 @@ import { getApiBaseUrl } from "./config";
 import { getAuthToken } from "./supabaseClient";
 
 /**
+ * Structured API Error containing HTTP metadata and actionable diagnostic flags.
+ */
+export class ApiError extends Error {
+  status: number;
+  statusText: string;
+  endpoint: string;
+  responseBody?: string;
+  isNetworkError: boolean;
+  isAuthError: boolean;
+  isWarmup: boolean;
+
+  constructor(options: {
+    message: string;
+    status?: number;
+    statusText?: string;
+    endpoint: string;
+    responseBody?: string;
+    isNetworkError?: boolean;
+    isAuthError?: boolean;
+    isWarmup?: boolean;
+  }) {
+    super(options.message);
+    this.name = "ApiError";
+    this.status = options.status || 0;
+    this.statusText = options.statusText || "";
+    this.endpoint = options.endpoint;
+    this.responseBody = options.responseBody;
+    this.isNetworkError = Boolean(options.isNetworkError);
+    this.isAuthError = Boolean(
+      options.isAuthError || options.status === 401 || options.status === 403
+    );
+    this.isWarmup = Boolean(options.isWarmup);
+  }
+}
+
+/**
  * Resolve an API path to a fully qualified URL using VITE_API_BASE_URL.
  */
 export function apiUrl(path: string): string {
@@ -11,7 +47,66 @@ export function apiUrl(path: string): string {
 }
 
 /**
- * Enhanced fetch wrapper that attaches Supabase Bearer JWT tokens when authenticated.
+ * Safely parse JSON from a Response object, preventing unexpected token errors
+ * when endpoints return HTML (such as Vercel 404s or Render cold-start pages).
+ */
+export async function safeJsonParse<T>(response: Response, endpoint: string): Promise<T> {
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+
+  if (!text || !text.trim()) {
+    return {} as T;
+  }
+
+  const lowerText = text.trim().toLowerCase();
+
+  // Detect HTML responses (Vercel SPA fallback, Cloudflare 502/504, or Render cold-start pages)
+  if (
+    contentType.includes("text/html") ||
+    lowerText.startsWith("<!doctype") ||
+    lowerText.startsWith("<html") ||
+    lowerText.includes("<head") ||
+    lowerText.includes("<body>")
+  ) {
+    const isWarming =
+      response.status === 502 ||
+      response.status === 503 ||
+      response.status === 504 ||
+      text.includes("Render") ||
+      text.includes("Cloudflare") ||
+      text.includes("Gateway");
+
+    throw new ApiError({
+      message: isWarming
+        ? `Backend service is warming up (${endpoint}). Please wait 10-15 seconds and refresh.`
+        : `Backend returned HTML instead of JSON for ${endpoint} (HTTP ${response.status}).`,
+      status: response.status,
+      statusText: response.statusText,
+      endpoint,
+      responseBody: text.slice(0, 300),
+      isWarmup: isWarming,
+    });
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (parseErr: any) {
+    throw new ApiError({
+      message: `Invalid JSON response from ${endpoint}: ${parseErr?.message || "Failed to parse"}`,
+      status: response.status,
+      statusText: response.statusText,
+      endpoint,
+      responseBody: text.slice(0, 300),
+    });
+  }
+}
+
+/**
+ * Enhanced fetch wrapper with:
+ * - Supabase JWT bearer token attachment
+ * - Automatic URL normalization
+ * - Safe .json() wrapping to prevent syntax crashes
+ * - Explicit timeout and network failure classification
  */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const url = apiUrl(path);
@@ -28,38 +123,67 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     headers.set("Content-Type", "application/json");
   }
 
-  return fetch(url, {
-    ...init,
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers,
+    });
+
+    // Monkey-patch response.json() so calling it directly in any existing component
+    // goes through safeJsonParse rather than crashing with "Unexpected token '<'".
+    const originalJson = response.json.bind(response);
+    response.json = async function () {
+      try {
+        return await safeJsonParse(response.clone(), path);
+      } catch (err) {
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        return originalJson();
+      }
+    };
+
+    return response;
+  } catch (netErr: any) {
+    if (netErr instanceof ApiError) {
+      throw netErr;
+    }
+    throw new ApiError({
+      message: `Network error connecting to ${path}: ${netErr?.message || "Connection failed"}. Check your connection or backend status.`,
+      endpoint: path,
+      isNetworkError: true,
+    });
+  }
 }
 
 /**
- * Typed JSON fetch helper with standard production error handling.
+ * Typed JSON fetch helper with full error detail extraction and validation.
  */
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await apiFetch(path, init);
-  const contentType = response.headers.get("content-type") || "";
-
-  if (!contentType.includes("application/json")) {
-    const text = await response.text();
-    if (text.includes("<!doctype") || text.includes("<html")) {
-      throw new Error("Backend server is warming up. Please wait 10-15 seconds and refresh.");
-    }
-    throw new Error(`Non-JSON response from server (HTTP ${response.status}): ${text.slice(0, 80)}`);
-  }
 
   if (!response.ok) {
     let errDetail = `HTTP ${response.status} (${response.statusText})`;
     try {
-      const errBody = await response.json();
-      if (errBody && errBody.detail) {
-        errDetail = typeof errBody.detail === "string" ? errBody.detail : JSON.stringify(errBody.detail);
+      const data = await safeJsonParse<any>(response, path);
+      if (data && data.detail) {
+        errDetail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      } else if (data && data.message) {
+        errDetail = data.message;
       }
-    } catch {
-      // Ignore JSON parse error on non-JSON response
+    } catch (e: any) {
+      if (e instanceof ApiError) {
+        throw e;
+      }
     }
-    throw new Error(errDetail);
+
+    throw new ApiError({
+      message: `${errDetail} on ${path}`,
+      status: response.status,
+      statusText: response.statusText,
+      endpoint: path,
+    });
   }
-  return response.json() as Promise<T>;
+
+  return safeJsonParse<T>(response, path);
 }

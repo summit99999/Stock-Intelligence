@@ -63,51 +63,31 @@ export interface MarketDataHealthDiagnostics {
 }
 
 import { getApiBaseUrl } from "./config";
-import { apiFetch } from "./client";
+import { apiFetch, apiJson } from "./client";
 
 const API_BASE = getApiBaseUrl();
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 export async function fetchLiveQuotes(symbols?: string[]): Promise<LiveQuotesResponse> {
   const query = symbols && symbols.length > 0 ? `?symbols=${symbols.join(",")}` : "";
-  const res = await apiFetch(`/api/market/live/quotes${query}`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch live quotes: ${res.statusText}`);
-  }
-  return res.json();
+  return apiJson<LiveQuotesResponse>(`/api/market/live/quotes${query}`);
 }
 
 export async function fetchLiveFeedStatus(): Promise<LiveFeedStatus> {
-  const res = await apiFetch(`/api/market/live/status`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch live feed status: ${res.statusText}`);
-  }
-  return res.json();
+  return apiJson<LiveFeedStatus>(`/api/market/live/status`);
 }
 
 export async function fetchMarketDataHealth(): Promise<MarketDataHealthDiagnostics> {
-  const res = await apiFetch(`/api/health/market-data`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch market data diagnostics: ${res.statusText}`);
-  }
-  return res.json();
+  return apiJson<MarketDataHealthDiagnostics>(`/api/health/market-data`);
 }
 
 export async function refreshLiveQuotes(): Promise<LiveQuotesResponse> {
-  const res = await apiFetch(`/api/market/live/refresh`, { method: "POST" });
-  if (!res.ok) {
-    throw new Error(`Failed to refresh quotes: ${res.statusText}`);
-  }
-  return res.json();
+  return apiJson<LiveQuotesResponse>(`/api/market/live/refresh`, { method: "POST" });
 }
 
 export async function reconnectLiveFeed(enable: boolean = false): Promise<LiveFeedStatus> {
   const query = enable ? "?enable=true" : "";
-  const res = await apiFetch(`/api/market/live/reconnect${query}`, { method: "POST" });
-  if (!res.ok) {
-    throw new Error(`Failed to reconnect live feed: ${res.statusText}`);
-  }
-  return res.json();
+  return apiJson<LiveFeedStatus>(`/api/market/live/reconnect${query}`, { method: "POST" });
 }
 
 export function subscribeMarketFeed(callbacks: {

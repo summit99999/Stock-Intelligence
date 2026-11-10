@@ -76,12 +76,40 @@ class UpstoxProvider(DataProvider):
         key = self.instrument_service.get_instrument_key(symbol)
         stored = get_upstox_token()
 
-        if key and stored and stored.access_token:
-            url = f"https://api.upstox.com/v2/historical-candle/{key}/day"
+        if key:
+            import urllib.parse
+            import datetime
+
+            days_map = {
+                "1d": 2,
+                "5d": 8,
+                "1mo": 35,
+                "1m": 35,
+                "3mo": 100,
+                "3m": 100,
+                "6mo": 200,
+                "6m": 200,
+                "1y": 380,
+                "2y": 750,
+                "3y": 1150,
+                "5y": 1900,
+                "10y": 3800,
+                "max": 3800,
+            }
+            days_back = days_map.get(period.lower(), 380)
+            today = datetime.date.today()
+            to_date = today.strftime("%Y-%m-%d")
+            from_date = (today - datetime.timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+            quoted_key = urllib.parse.quote(key, safe="")
+            url = f"https://api.upstox.com/v2/historical-candle/{quoted_key}/day/{to_date}/{from_date}"
             headers = {
                 "Accept": "application/json",
-                "Authorization": f"Bearer {stored.access_token}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             }
+            if stored and stored.access_token:
+                headers["Authorization"] = f"Bearer {stored.access_token}"
+
             try:
                 with httpx.Client(timeout=15.0) as client:
                     res = client.get(url, headers=headers)
@@ -93,7 +121,10 @@ class UpstoxProvider(DataProvider):
                             df["date"] = pd.to_datetime(df["timestamp"]).dt.strftime("%Y-%m-%d")
                             df["adj_close"] = df["close"]
                             df = df.sort_values("date").reset_index(drop=True)
+                            logger.info("Successfully fetched %d daily candles from Upstox for %s", len(df), symbol)
                             return df[["date", "open", "high", "low", "close", "adj_close", "volume"]]
+                    else:
+                        logger.warning("Upstox historical candle returned HTTP %d for %s: %s", res.status_code, symbol, res.text[:120])
             except Exception as e:
                 logger.warning("Could not fetch historical candles from Upstox for %s: %s", symbol, e)
 

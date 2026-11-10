@@ -250,6 +250,23 @@ class UpstoxMarketService:
                 updated_at=now_str,
             )
 
+        try:
+            from app.database import update_stock_fields
+            final_q = self._quote_cache.get(sym)
+            if final_q and final_q.ltp:
+                fields = {
+                    "close": final_q.ltp,
+                    "data_source": "upstox_live",
+                    "updated_at": now_str,
+                }
+                if final_q.change_percent is not None:
+                    fields["daily_change_pct"] = final_q.change_percent
+                if final_q.volume:
+                    fields["volume"] = final_q.volume
+                update_stock_fields(sym, fields)
+        except Exception:
+            pass
+
 
 _market_service_instance: Optional[UpstoxMarketService] = None
 

@@ -91,6 +91,7 @@ class CalculatedRatiosResult(BaseModel):
     growth: GrowthRatios
     profitability: ProfitabilityRatios
     health: FinancialHealthRatios
+    financial_health: Optional[FinancialHealthRatios] = None
     valuation: ValuationRatios
     data_provenance: str = "verified"
     retrieval_timestamp: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
@@ -458,6 +459,7 @@ def compute_all_ratios(
         growth=growth,
         profitability=profitability,
         health=health,
+        financial_health=health,
         valuation=valuation,
         data_provenance=latest_inc.get("source", "verified"),
         metric_metadata=metric_metadata,

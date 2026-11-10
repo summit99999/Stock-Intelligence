@@ -59,6 +59,13 @@ export default function CompanyResearch({
     return "text-rose-400 border-rose-500/40 bg-rose-500/10";
   };
 
+  const ratios = dossier?.calculated_ratios;
+  const growth = ratios?.growth;
+  const prof = ratios?.profitability;
+  const hlth = ratios?.financial_health || (ratios as any)?.health;
+  const val = ratios?.valuation;
+  const prov = dossier?.provenance;
+
   const formatNumber = (val?: number | null, decimals = 1, prefix = "", suffix = "") => {
     if (val === null || val === undefined || isNaN(val)) return "—";
     return `${prefix}${val.toLocaleString("en-IN", {
@@ -135,23 +142,23 @@ export default function CompanyResearch({
                   {/* Provenance Badge */}
                   <span
                     className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border ${
-                      dossier.provenance.verification_status === "verified"
+                      prov?.verification_status === "verified"
                         ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                        : dossier.provenance.verification_status === "imported"
+                        : prov?.verification_status === "imported"
                         ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
                         : "bg-gray-700 text-gray-300 border-gray-600"
                     }`}
                   >
-                    {dossier.provenance.verification_status === "verified"
+                    {prov?.verification_status === "verified"
                       ? "✓ VERIFIED OFFICIAL"
-                      : dossier.provenance.verification_status === "imported"
+                      : prov?.verification_status === "imported"
                       ? "📥 SCREENER CSV"
                       : "DEMO DATA"}
                   </span>
                   {/* Price Freshness */}
-                  {dossier.provenance.is_price_stale ? (
+                  {prov?.is_price_stale ? (
                     <span className="text-xs px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-medium">
-                      ⚠ Stale Price ({dossier.provenance.price_date || "> 5d"})
+                      ⚠ Stale Price ({prov?.price_date || "> 5d"})
                     </span>
                   ) : (
                     <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
@@ -193,28 +200,28 @@ export default function CompanyResearch({
               <div className="bg-[#0b0e14] p-3 rounded-lg border border-gray-800/60">
                 <div className="text-gray-500 font-medium">P/E Ratio</div>
                 <div className="font-semibold text-gray-200 mt-0.5 text-sm">
-                  {formatNumber(dossier.calculated_ratios?.valuation.pe, 1, "", "x")}
+                  {formatNumber(val?.pe, 1, "", "x")}
                 </div>
               </div>
               <div className="bg-[#0b0e14] p-3 rounded-lg border border-gray-800/60">
                 <div className="text-gray-500 font-medium">ROCE (Avg)</div>
                 <div className="font-semibold text-emerald-400 mt-0.5 text-sm">
-                  {formatNumber(dossier.calculated_ratios?.profitability.roce, 1, "", "%")}
+                  {formatNumber(prof?.roce, 1, "", "%")}
                 </div>
               </div>
               <div className="bg-[#0b0e14] p-3 rounded-lg border border-gray-800/60">
                 <div className="text-gray-500 font-medium">ROE (Avg)</div>
                 <div className="font-semibold text-emerald-400 mt-0.5 text-sm">
-                  {formatNumber(dossier.calculated_ratios?.profitability.roe, 1, "", "%")}
+                  {formatNumber(prof?.roe, 1, "", "%")}
                 </div>
               </div>
               <div className="bg-[#0b0e14] p-3 rounded-lg border border-gray-800/60">
                 <div className="text-gray-500 font-medium">Debt / Equity</div>
                 <div className="font-semibold text-gray-200 mt-0.5 text-sm">
-                  {dossier.calculated_ratios?.financial_health.is_debt_free ? (
+                  {hlth?.is_debt_free ? (
                     <span className="text-emerald-400">0.0 (Debt Free)</span>
                   ) : (
-                    formatNumber(dossier.calculated_ratios?.financial_health.debt_equity, 2)
+                    formatNumber(hlth?.debt_equity, 2)
                   )}
                 </div>
               </div>
@@ -333,7 +340,7 @@ export default function CompanyResearch({
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <span>📊</span> Key Fundamental Ratios
                 <span className="text-xs text-gray-400 font-normal">
-                  (Reporting Period: {dossier.calculated_ratios.reporting_period} • {dossier.calculated_ratios.statement_type})
+                  (Reporting Period: {ratios?.reporting_period || "Latest"} • {ratios?.statement_type || "Consolidated"})
                 </span>
               </h2>
 
@@ -347,31 +354,31 @@ export default function CompanyResearch({
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">3Y Revenue CAGR:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.growth.revenue_cagr_3y, 1, "", "%")}
+                        {formatNumber(growth?.revenue_cagr_3y, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">5Y Revenue CAGR:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.growth.revenue_cagr_5y, 1, "", "%")}
+                        {formatNumber(growth?.revenue_cagr_5y, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">3Y PAT CAGR:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.growth.pat_cagr_3y, 1, "", "%")}
+                        {formatNumber(growth?.pat_cagr_3y, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">5Y PAT CAGR:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.growth.pat_cagr_5y, 1, "", "%")}
+                        {formatNumber(growth?.pat_cagr_5y, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1">
                       <span className="text-gray-400">Latest Qtr YoY Growth:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.growth.quarterly_rev_growth_yoy, 1, "", "%")}
+                        {formatNumber(growth?.quarterly_rev_growth_yoy, 1, "", "%")}
                       </span>
                     </div>
                   </div>
@@ -386,31 +393,31 @@ export default function CompanyResearch({
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Return on Equity (ROE):</span>
                       <span className="font-semibold text-emerald-400">
-                        {formatNumber(dossier.calculated_ratios.profitability.roe, 1, "", "%")}
+                        {formatNumber(prof?.roe, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">ROCE (Avg Capital):</span>
                       <span className="font-semibold text-emerald-400">
-                        {formatNumber(dossier.calculated_ratios.profitability.roce, 1, "", "%")}
+                        {formatNumber(prof?.roce, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Return on Assets (ROA):</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.profitability.roa, 1, "", "%")}
+                        {formatNumber(prof?.roa, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Operating Margin (OPM):</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.profitability.operating_margin_pct, 1, "", "%")}
+                        {formatNumber(prof?.operating_margin_pct, 1, "", "%")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1">
                       <span className="text-gray-400">Net Profit Margin (NPM):</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.profitability.net_profit_margin_pct, 1, "", "%")}
+                        {formatNumber(prof?.net_profit_margin_pct, 1, "", "%")}
                       </span>
                     </div>
                   </div>
@@ -425,33 +432,33 @@ export default function CompanyResearch({
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Debt to Equity:</span>
                       <span className="font-semibold text-gray-200">
-                        {dossier.calculated_ratios.financial_health.is_debt_free
+                        {hlth?.is_debt_free
                           ? "Debt Free (0.0)"
-                          : formatNumber(dossier.calculated_ratios.financial_health.debt_equity, 2)}
+                          : formatNumber(hlth?.debt_equity, 2)}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Interest Coverage:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.financial_health.interest_coverage, 1, "", "x")}
+                        {formatNumber(hlth?.interest_coverage, 1, "", "x")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">CFO / PAT (Quality):</span>
                       <span className="font-semibold text-emerald-400">
-                        {formatNumber(dossier.calculated_ratios.financial_health.cfo_pat_ratio, 2, "", "x")}
+                        {formatNumber(hlth?.cfo_pat_ratio, 2, "", "x")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Free Cash Flow:</span>
                       <span className="font-semibold text-gray-200">
-                        ₹{formatNumber(dossier.calculated_ratios.financial_health.free_cash_flow_cr, 0)} Cr
+                        ₹{formatNumber(hlth?.free_cash_flow_cr, 0)} Cr
                       </span>
                     </div>
                     <div className="flex justify-between py-1">
                       <span className="text-gray-400">Cash Conversion (CFO/EBITDA):</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.financial_health.cash_conversion_ratio, 2)}
+                        {formatNumber(hlth?.cash_conversion_ratio, 2)}
                       </span>
                     </div>
                   </div>
@@ -466,31 +473,31 @@ export default function CompanyResearch({
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Price to Earnings (P/E):</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.valuation.pe, 1, "", "x")}
+                        {formatNumber(val?.pe, 1, "", "x")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">Price to Book (P/B):</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.valuation.pb, 1, "", "x")}
+                        {formatNumber(val?.pb, 1, "", "x")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">PEG Ratio:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.valuation.peg, 2)}
+                        {formatNumber(val?.peg, 2)}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-gray-800/60">
                       <span className="text-gray-400">EV / EBITDA:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.valuation.ev_ebitda, 1, "", "x")}
+                        {formatNumber(val?.ev_ebitda, 1, "", "x")}
                       </span>
                     </div>
                     <div className="flex justify-between py-1">
                       <span className="text-gray-400">Dividend Yield:</span>
                       <span className="font-semibold text-gray-200">
-                        {formatNumber(dossier.calculated_ratios.valuation.dividend_yield, 2, "", "%")}
+                        {formatNumber(val?.dividend_yield, 2, "", "%")}
                       </span>
                     </div>
                   </div>
@@ -561,7 +568,7 @@ export default function CompanyResearch({
                             {stmt.period}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            {formatNumber(stmt.revenue_from_operations_cr, 0)}
+                            {formatNumber(stmt.revenue_from_operations_cr ?? (stmt as any).revenue_cr, 0)}
                           </td>
                           <td className="py-2.5 px-3 text-right text-gray-400">
                             {formatNumber(stmt.total_expenses_cr, 0)}
@@ -617,7 +624,7 @@ export default function CompanyResearch({
                             {stmt.period}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            {formatNumber(stmt.revenue_from_operations_cr, 0)}
+                            {formatNumber(stmt.revenue_from_operations_cr ?? (stmt as any).revenue_cr, 0)}
                           </td>
                           <td className="py-2.5 px-3 text-right text-emerald-400">
                             {formatNumber(stmt.ebitda_cr, 0)}

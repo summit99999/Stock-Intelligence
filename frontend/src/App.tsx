@@ -507,6 +507,7 @@ function App() {
           <DashboardHome
             onSelectStock={handleOpenChart}
             onNavigate={setActivePage}
+            liveQuotes={liveQuotes}
           />
         )}
 

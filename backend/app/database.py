@@ -781,15 +781,15 @@ SAMPLE_STOCKS = [
     #  data_source, updated_at)
 
     ("RELIANCE", "Reliance Industries", "NSE", "Energy", "Oil & Gas", "large_cap", "INE002A01018",
-     2480.0, 1.25, 2850.0, 2200.0,
+     1324.40, 0.55, 1600.0, 1150.0,
      1680000, 24.5, 3.2, 10.8, 8.2, 0.42,
      12.5, 8.3, 15.2, 45000,
      50.3, 0.0, 23.1, 14.2,
-     58.2, 12.5, 10.8, 28.0, 2420.0, "up",
-     2455.0, 2430.0, 2390.0, 2350.0,
-     2460.0, 2435.0, 2395.0, 2355.0,
+     54.2, 5.5, 4.8, 22.0, 1300.0, "up",
+     1315.0, 1300.0, 1280.0, 1250.0,
+     1320.0, 1305.0, 1285.0, 1255.0,
      8500000, 1.2,
-     1.25, 2.8, 5.1, 12.3, 8.5, 18.2,
+     0.55, 1.8, 3.1, 8.3, 5.5, 12.2,
      "demo", "2026-10-31T09:15:00"),
 
     ("TCS", "Tata Consultancy Services", "NSE", "IT", "IT Services", "large_cap", "INE467B01029",
@@ -1372,6 +1372,36 @@ def init_db():
         count = con.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]
         if count == 0:
             con.executemany(_INSERT_SQL, SAMPLE_STOCKS)
+
+        # Seed initial daily OHLCV bars for all stocks if ohlcv is empty
+        try:
+            ohlcv_count = con.execute("SELECT COUNT(*) FROM ohlcv").fetchone()[0]
+            if ohlcv_count == 0:
+                import datetime
+                import math
+                today = datetime.date.today()
+                ohlcv_rows = []
+                for item in SAMPLE_STOCKS:
+                    sym = item[0]
+                    base_close = item[7] or 1000.0
+                    base_vol = item[30] or 1000000
+                    cur_price = base_close * 0.85
+                    for i in range(120, -1, -1):
+                        bar_date = (today - datetime.timedelta(days=int(i * 1.45))).strftime("%Y-%m-%d")
+                        step = (base_close - cur_price) * 0.04 + (math.sin(i * 0.3) * (base_close * 0.015))
+                        cur_price = max(1.0, round(cur_price + step, 2))
+                        op = round(cur_price * 0.998, 2)
+                        hi = round(max(op, cur_price) * 1.012, 2)
+                        lo = round(min(op, cur_price) * 0.988, 2)
+                        vol = int(base_vol * (0.8 + (math.cos(i) * 0.3)))
+                        ohlcv_rows.append((sym, "daily", bar_date, op, hi, lo, cur_price, cur_price, vol, "seed"))
+                con.executemany(
+                    "INSERT OR REPLACE INTO ohlcv (symbol, interval, timestamp, open, high, low, close, adj_close, volume, source) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ohlcv_rows
+                )
+        except Exception:
+            pass
 
         # Seed VolumeLens 7-point breakout preset into saved_screeners if missing
         try:

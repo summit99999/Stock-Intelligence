@@ -1,18 +1,10 @@
 /** API client for the Stock Screener backend. */
 
 import type { ScreenRequest, ScreenResponse, ScreenerMetadata, SavedScreener } from "../types/screener";
-import { apiFetch as baseApiFetch } from "./client";
+import { apiFetch as baseApiFetch, apiJson } from "./client";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await baseApiFetch(path, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
-  return res.json();
+  return apiJson<T>(path, init);
 }
 
 /** Run the screener with filters. */

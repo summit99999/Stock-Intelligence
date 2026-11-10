@@ -50,10 +50,11 @@ export interface CalculatedRatiosResult {
   reporting_period: string;
   data_coverage_pct: number;
   confidence: string;
-  growth: GrowthRatios;
-  profitability: ProfitabilityRatios;
-  financial_health: FinancialHealthRatios;
-  valuation: ValuationRatios;
+  growth?: GrowthRatios;
+  profitability?: ProfitabilityRatios;
+  health?: FinancialHealthRatios;
+  financial_health?: FinancialHealthRatios;
+  valuation?: ValuationRatios;
 }
 
 export interface CategoryScore {
