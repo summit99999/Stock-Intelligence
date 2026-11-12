@@ -28,6 +28,8 @@ _BACKOFF_BASE = 2  # exponential: 2s, 4s, 8s
 
 def _yf_ticker(symbol: str, exchange: str = "NSE") -> str:
     """Convert a plain symbol to a Yahoo Finance ticker."""
+    if symbol.startswith("^"):
+        return symbol
     suffix = ".NS" if exchange.upper() == "NSE" else ".BO"
     return f"{symbol}{suffix}"
 

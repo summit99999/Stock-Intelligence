@@ -16,6 +16,7 @@ import MarketXRayView from "./components/MarketXRayView";
 import OrderBlockBoardView from "./components/OrderBlockBoardView";
 import SmartMoneyConceptsView from "./components/SmartMoneyConceptsView";
 import SMCBacktestView from "./components/SMCBacktestView";
+import ConsolidationBreakoutBacktestView from "./components/ConsolidationBreakoutBacktestView";
 import MarketScannerView from "./components/MarketScannerView";
 import SetupBoardView from "./components/SetupBoardView";
 import MoneyFlowIntelligenceView from "./components/MoneyFlowIntelligenceView";
@@ -101,7 +102,8 @@ const navSections: { section: string; items: NavItemDef[] }[] = [
       { name: "Intraday Data Health", icon: "◉", section: "RESEARCH" },
       { name: "Fundamental Analysis", icon: "▤", section: "RESEARCH" },
       { name: "SMC Analysis", icon: "⌗", section: "RESEARCH", tag: "SMC" },
-      { name: "Backtesting", icon: "◷", section: "RESEARCH" },
+      { name: "SMC Backtest", icon: "↺", section: "RESEARCH", tag: "SMC" },
+      { name: "Backtesting", icon: "◷", section: "RESEARCH", tag: "V1" },
     ],
   },
   {
@@ -562,12 +564,16 @@ function App() {
           />
         )}
 
-        {activePage === "Backtesting" && (
+        {activePage === "SMC Backtest" && (
           <SMCBacktestView
             symbol={currentSymbol}
             onSymbolChange={setCurrentSymbol}
             onNavigate={setActivePage}
           />
+        )}
+
+        {activePage === "Backtesting" && (
+          <ConsolidationBreakoutBacktestView />
         )}
 
         {activePage === "Watchlists" && (
@@ -980,7 +986,7 @@ function App() {
         )}
 
         {/* 16. SMC Backtest */}
-        {(activePage === "SMC Backtest" || activePage === "Backtesting") && (
+        {activePage === "SMC Backtest" && (
           <SMCBacktestView
             symbol={currentSymbol}
             onSymbolChange={setCurrentSymbol}

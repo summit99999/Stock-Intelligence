@@ -59,10 +59,60 @@ class NSECalendarEntry:
 
 
 # ---------------------------------------------------------------------------
-# Comprehensive Structured Master Calendar Entries (2024–2026)
+# Comprehensive Structured Master Calendar Entries (2021–2026)
 # ---------------------------------------------------------------------------
 
 NSE_MASTER_CALENDAR: Dict[str, NSECalendarEntry] = {
+    # ---------------- 2021 Official NSE Equity Calendar ----------------
+    "2021-01-26": NSECalendarEntry(date="2021-01-26", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Republic Day"),
+    "2021-03-11": NSECalendarEntry(date="2021-03-11", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Mahashivratri"),
+    "2021-03-29": NSECalendarEntry(date="2021-03-29", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Holi"),
+    "2021-04-02": NSECalendarEntry(date="2021-04-02", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Good Friday"),
+    "2021-04-14": NSECalendarEntry(date="2021-04-14", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Dr. Baba Saheb Ambedkar Jayanti"),
+    "2021-04-21": NSECalendarEntry(date="2021-04-21", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Ram Navami"),
+    "2021-05-13": NSECalendarEntry(date="2021-05-13", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Id-Ul-Fitr"),
+    "2021-07-21": NSECalendarEntry(date="2021-07-21", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Bakri Id"),
+    "2021-08-19": NSECalendarEntry(date="2021-08-19", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Muharram"),
+    "2021-09-10": NSECalendarEntry(date="2021-09-10", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Ganesh Chaturthi"),
+    "2021-10-15": NSECalendarEntry(date="2021-10-15", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Dussehra"),
+    "2021-11-04": NSECalendarEntry(date="2021-11-04", session_type=CalendarSessionType.SPECIAL_TRUNCATED, trading_status=TradingStatus.SPECIAL_HOURS, name="Diwali Muhurat Trading (Samvat 2078)", start_time="18:15:00", end_time="19:15:00", expected_5m_bars=12, is_full_session=False),
+    "2021-11-05": NSECalendarEntry(date="2021-11-05", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Diwali Balipratipada"),
+    "2021-11-19": NSECalendarEntry(date="2021-11-19", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Gurunanak Jayanti"),
+
+    # ---------------- 2022 Official NSE Equity Calendar ----------------
+    "2022-01-26": NSECalendarEntry(date="2022-01-26", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Republic Day"),
+    "2022-03-01": NSECalendarEntry(date="2022-03-01", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Mahashivratri"),
+    "2022-03-18": NSECalendarEntry(date="2022-03-18", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Holi"),
+    "2022-04-14": NSECalendarEntry(date="2022-04-14", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Dr. Baba Saheb Ambedkar Jayanti / Mahavir Jayanti"),
+    "2022-04-15": NSECalendarEntry(date="2022-04-15", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Good Friday"),
+    "2022-05-03": NSECalendarEntry(date="2022-05-03", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Id-Ul-Fitr"),
+    "2022-08-09": NSECalendarEntry(date="2022-08-09", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Muharram"),
+    "2022-08-15": NSECalendarEntry(date="2022-08-15", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Independence Day"),
+    "2022-08-31": NSECalendarEntry(date="2022-08-31", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Ganesh Chaturthi"),
+    "2022-10-05": NSECalendarEntry(date="2022-10-05", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Dussehra"),
+    "2022-10-24": NSECalendarEntry(date="2022-10-24", session_type=CalendarSessionType.SPECIAL_TRUNCATED, trading_status=TradingStatus.SPECIAL_HOURS, name="Diwali Muhurat Trading (Samvat 2079)", start_time="18:15:00", end_time="19:15:00", expected_5m_bars=12, is_full_session=False),
+    "2022-10-26": NSECalendarEntry(date="2022-10-26", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Diwali Balipratipada"),
+    "2022-11-08": NSECalendarEntry(date="2022-11-08", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Gurunanak Jayanti"),
+
+    # ---------------- 2023 Official NSE Equity Calendar ----------------
+    "2023-01-26": NSECalendarEntry(date="2023-01-26", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Republic Day"),
+    "2023-03-07": NSECalendarEntry(date="2023-03-07", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Holi"),
+    "2023-03-30": NSECalendarEntry(date="2023-03-30", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Ram Navami"),
+    "2023-04-04": NSECalendarEntry(date="2023-04-04", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Mahavir Jayanti"),
+    "2023-04-07": NSECalendarEntry(date="2023-04-07", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Good Friday"),
+    "2023-04-14": NSECalendarEntry(date="2023-04-14", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Dr. Baba Saheb Ambedkar Jayanti"),
+    "2023-04-21": NSECalendarEntry(date="2023-04-21", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Id-Ul-Fitr"),
+    "2023-05-01": NSECalendarEntry(date="2023-05-01", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Maharashtra Day"),
+    "2023-06-29": NSECalendarEntry(date="2023-06-29", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Bakri Id"),
+    "2023-08-15": NSECalendarEntry(date="2023-08-15", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Independence Day"),
+    "2023-09-19": NSECalendarEntry(date="2023-09-19", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Ganesh Chaturthi"),
+    "2023-10-02": NSECalendarEntry(date="2023-10-02", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Mahatma Gandhi Jayanti"),
+    "2023-10-24": NSECalendarEntry(date="2023-10-24", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Dussehra"),
+    "2023-11-12": NSECalendarEntry(date="2023-11-12", session_type=CalendarSessionType.SPECIAL_TRUNCATED, trading_status=TradingStatus.SPECIAL_HOURS, name="Diwali Muhurat Trading (Samvat 2080)", start_time="18:15:00", end_time="19:15:00", expected_5m_bars=12, is_full_session=False),
+    "2023-11-14": NSECalendarEntry(date="2023-11-14", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Diwali Balipratipada"),
+    "2023-11-27": NSECalendarEntry(date="2023-11-27", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Gurunanak Jayanti"),
+    "2023-12-25": NSECalendarEntry(date="2023-12-25", session_type=CalendarSessionType.WEEKDAY_HOLIDAY, trading_status=TradingStatus.CLOSED, name="Christmas"),
+
     # ---------------- 2024 Official NSE Equity Calendar ----------------
     "2024-01-22": NSECalendarEntry(
         date="2024-01-22",
@@ -507,33 +557,16 @@ NSE_MASTER_CALENDAR: Dict[str, NSECalendarEntry] = {
 # ---------------------------------------------------------------------------
 
 NSE_HOLIDAYS_BY_YEAR: Dict[int, Dict[str, str]] = {
-    2024: {
+    yr: {
         entry.date: entry.name
         for entry in NSE_MASTER_CALENDAR.values()
-        if entry.date.startswith("2024-") and entry.session_type in (
+        if entry.date.startswith(f"{yr}-") and entry.session_type in (
             CalendarSessionType.WEEKDAY_HOLIDAY,
             CalendarSessionType.EXCEPTIONAL_CLOSURE,
             CalendarSessionType.WEEKEND_HOLIDAY,
         )
-    },
-    2025: {
-        entry.date: entry.name
-        for entry in NSE_MASTER_CALENDAR.values()
-        if entry.date.startswith("2025-") and entry.session_type in (
-            CalendarSessionType.WEEKDAY_HOLIDAY,
-            CalendarSessionType.EXCEPTIONAL_CLOSURE,
-            CalendarSessionType.WEEKEND_HOLIDAY,
-        )
-    },
-    2026: {
-        entry.date: entry.name
-        for entry in NSE_MASTER_CALENDAR.values()
-        if entry.date.startswith("2026-") and entry.session_type in (
-            CalendarSessionType.WEEKDAY_HOLIDAY,
-            CalendarSessionType.EXCEPTIONAL_CLOSURE,
-            CalendarSessionType.WEEKEND_HOLIDAY,
-        )
-    },
+    }
+    for yr in (2021, 2022, 2023, 2024, 2025, 2026)
 }
 
 NSE_SPECIAL_SESSIONS: Dict[str, Dict[str, Any]] = {
@@ -1038,6 +1071,40 @@ def get_valid_historical_trading_sessions(
     return valid_dates
 
 
+def get_trading_days_between(
+    start_date: Union[date, datetime, str],
+    end_date: Union[date, datetime, str],
+    exclude_special: bool = False,
+) -> List[str]:
+    """
+    Returns list of all official trading dates ('YYYY-MM-DD') between start_date and end_date (inclusive),
+    in chronological order, strictly excluding exchange holidays and regular weekends.
+    """
+    s_clean, _ = _normalize_date_str(start_date)
+    e_clean, _ = _normalize_date_str(end_date)
+    start_d = date.fromisoformat(s_clean)
+    end_d = date.fromisoformat(e_clean)
+
+    if start_d > end_d:
+        return []
+
+    trading_days: List[str] = []
+    curr = start_d
+    while curr <= end_d:
+        d_str = curr.strftime("%Y-%m-%d")
+        is_trading, _ = is_trading_day(d_str)
+        if is_trading:
+            if exclude_special:
+                is_special, _, _ = is_special_trading_session(d_str)
+                if not is_special:
+                    trading_days.append(d_str)
+            else:
+                trading_days.append(d_str)
+        curr += timedelta(days=1)
+
+    return trading_days
+
+
 def validate_calendar_configuration() -> Dict[str, Any]:
     """
     Comprehensive self-audit of the NSE trading calendar.
@@ -1045,7 +1112,7 @@ def validate_calendar_configuration() -> Dict[str, Any]:
     - Chronological uniqueness.
     - Official circular presence for special sessions and closures.
     - Weekend vs weekday holiday accuracy.
-    - 2024, 2025, 2026 total holiday counts.
+    - 2021-2026 total holiday counts.
     """
     total_entries = len(NSE_MASTER_CALENDAR)
     year_counts: Dict[int, int] = {}
@@ -1066,6 +1133,6 @@ def validate_calendar_configuration() -> Dict[str, Any]:
         "entries_by_year": year_counts,
         "entries_with_circulars": circulars_present,
         "special_sessions_configured": special_sessions_count,
-        "verified_years": [2024, 2025, 2026],
+        "verified_years": [2021, 2022, 2023, 2024, 2025, 2026],
         "last_audit_timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

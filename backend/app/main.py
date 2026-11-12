@@ -19,6 +19,7 @@ from app.config import get_upstox_config
 from app.database import get_database_mode, init_db
 from app.routers import (
     ai_planner,
+    backtest,
     fundamentals,
     instruments,
     market_data,
@@ -162,3 +163,4 @@ app.include_router(money_flow.router)
 app.include_router(options.router)
 app.include_router(unified_research.router)
 app.include_router(instruments.router)
+app.include_router(backtest.router)
